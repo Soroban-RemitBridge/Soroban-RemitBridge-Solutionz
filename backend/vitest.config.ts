@@ -4,10 +4,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    // No global setup: every test in this suite is pure (money arithmetic, event
-    // decoding, provider branching, alert classification). Anything needing a
-    // database or the chain belongs in an integration job that runs against a
-    // real deployment, not in a unit suite that would then need Docker to run.
+    // The only setup is a fake environment: a few units import `config/env`,
+    // which parses and validates the environment at import time on purpose. No
+    // test here reaches a database or the chain — anything that needs either
+    // belongs in an integration job against a real deployment, not in a unit
+    // suite that would then need Docker to run.
+    setupFiles: ['tests/setup-env.ts'],
     globals: false,
     reporters: ['default'],
     coverage: {

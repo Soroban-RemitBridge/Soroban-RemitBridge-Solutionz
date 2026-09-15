@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyBps, assertSafeBps, fromStroops, toStroops } from '../src/lib/money.js';
+import { applyBps, assertSafeBps, fromStroops, MAX_BPS, toStroops } from '../src/lib/money.js';
 
 /**
  * These tests are the reason money never becomes a `number` in this service. The
@@ -57,9 +57,11 @@ describe('applyBps', () => {
   });
 
   it('refuses out-of-range basis points instead of clamping', () => {
-    expect(() => applyBps(100n, 10_001)).toThrow(/out of range/);
+    expect(() => applyBps(100n, MAX_BPS + 1)).toThrow(/out of range/);
     expect(() => applyBps(100n, -1)).toThrow(/out of range/);
     expect(() => applyBps(100n, 1.5)).toThrow(/out of range/);
     expect(() => assertSafeBps(10_000)).not.toThrow();
+    // Ratios above 100% are in range on purpose; only a unit mix-up is rejected.
+    expect(() => assertSafeBps(15_000)).not.toThrow();
   });
 });

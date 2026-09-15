@@ -6,7 +6,6 @@ import { MockIdVerificationProvider } from '../src/kyc-orchestration/mock-provid
 import {
   attestationHashOf,
   canonicalize,
-  type JsonValue,
   type VerificationRequest,
 } from '../src/kyc-orchestration/provider.js';
 
@@ -90,14 +89,14 @@ describe('MockIdVerificationProvider', () => {
 
 describe('attestation hashing', () => {
   it('is stable under key reordering', () => {
-    const a = canonicalize({ b: 1, a: 2 } as JsonValue);
-    const b = canonicalize({ a: 2, b: 1 } as JsonValue);
+    const a = canonicalize({ b: 1, a: 2 });
+    const b = canonicalize({ a: 2, b: 1 });
     expect(a).toBe(b);
     expect(a).toBe('{"a":2,"b":1}');
   });
 
   it('handles nested structures and arrays deterministically', () => {
-    expect(canonicalize({ z: [{ y: 1, x: 2 }], a: null } as JsonValue)).toBe('{"a":null,"z":[{"x":2,"y":1}]}');
+    expect(canonicalize({ z: [{ y: 1, x: 2 }], a: null })).toBe('{"a":null,"z":[{"x":2,"y":1}]}');
   });
 
   it('never leaks the document number into the hashed payload', async () => {
@@ -131,13 +130,15 @@ describe('webhook verification', () => {
 
   it('rejects a body that does not match its signature', () => {
     const secret = 'test-secret';
-    process.env['KYC_PROVIDER_WEBHOOK_SECRET'] = secret;
+    // The secret is injected rather than read from `process.env` at call time:
+    // configuration is parsed once at boot, so a provider built here is the only
+    // honest way to exercise a configured signature check.
+    const signed = new MockIdVerificationProvider({ webhookSecret: secret });
     const body = JSON.stringify({ providerRef: 'mock_1', outcome: 'APPROVED' });
     const signature = createHmac('sha256', secret).update(body).digest('hex');
 
-    expect(provider.verifyWebhookSignature({ 'x-provider-signature': signature }, body)).toBe(true);
-    expect(provider.verifyWebhookSignature({ 'x-provider-signature': signature }, `${body} `)).toBe(false);
-    expect(provider.verifyWebhookSignature({ 'x-provider-signature': 'short' }, body)).toBe(false);
-    delete process.env['KYC_PROVIDER_WEBHOOK_SECRET'];
+    expect(signed.verifyWebhookSignature({ 'x-provider-signature': signature }, body)).toBe(true);
+    expect(signed.verifyWebhookSignature({ 'x-provider-signature': signature }, `${body} `)).toBe(false);
+    expect(signed.verifyWebhookSignature({ 'x-provider-signature': 'short' }, body)).toBe(false);
   });
 });

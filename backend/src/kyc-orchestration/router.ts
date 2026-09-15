@@ -6,6 +6,7 @@ import { env } from '../config/env.js';
 import { prisma } from '../db/client.js';
 import { notFound, unauthorized, validationFailed } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
+import { toVerificationTier } from './provider.js';
 import {
   expireStaleAttestations,
   getProvider,
@@ -217,7 +218,9 @@ export function kycRouter(): Router {
     const provider = getProvider();
     res.json({
       provider: provider.id,
-      supportedTiers: provider.supportedTiers,
+      // Translated out of the provider's vocabulary: this response is read by the
+      // dashboard, and the dashboard's contract is `VerificationTier`.
+      supportedTiers: provider.supportedTiers.map(toVerificationTier),
       enhancedDueDiligence: provider.supportsEnhancedDueDiligence,
       attestationTtlDays: env.KYC_ATTESTATION_TTL_DAYS,
       webhookSignatureRequired: env.KYC_PROVIDER_WEBHOOK_SECRET !== undefined,

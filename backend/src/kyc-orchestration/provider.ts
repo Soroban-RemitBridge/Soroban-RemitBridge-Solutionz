@@ -142,6 +142,28 @@ export function toContractTier(tier: ProviderTier): 'None' | 'Standard' | 'Enhan
   return tier;
 }
 
+/**
+ * Provider tier vocabulary → the tier names this service's API and database use.
+ *
+ * The provider interface speaks the vendor's spelling (`'Standard'`) because that
+ * is what a provider returns. Everything that is *not* the vendor speaks
+ * `VerificationTier` (`'STANDARD'`) — the Prisma enum, the attestation records,
+ * the contract's tier bands and the console all use the upper-case form. An
+ * endpoint that leaks the vendor spelling makes its consumers validate against a
+ * vocabulary only one provider happens to use, which is exactly how the console's
+ * KYC panel came to reject `/kyc/config` as malformed.
+ */
+export function toVerificationTier(tier: ProviderTier): VerificationTier {
+  switch (tier) {
+    case 'None':
+      return 'NONE';
+    case 'Standard':
+      return 'STANDARD';
+    case 'Enhanced':
+      return 'ENHANCED';
+  }
+}
+
 export function tierSatisfies(held: ProviderTier, required: VerificationTier): boolean {
   const rank: Record<ProviderTier, number> = { None: 0, Standard: 1, Enhanced: 2 };
   const requiredProviderTier: Record<VerificationTier, ProviderTier> = {

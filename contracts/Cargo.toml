@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+  "agent-registry",
+  "compliance-hook",
+  "remit-escrow",
+  "liquidity-pool",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.84.0"
+license = "Apache-2.0"
+repository = "https://github.com/Soroban-RemitBridge/Soroban-RemitBridge-Solutionz"
+authors = ["RemitBridge Contributors"]
+homepage = "https://github.com/Soroban-RemitBridge/Soroban-RemitBridge-Solutionz"
+description = "Open, compliant last-mile remittance cash-out network on Stellar/Soroban"
+
+[workspace.dependencies]
+soroban-sdk = "22.0.1"
+agent-registry = { path = "agent-registry" }
+compliance-hook = { path = "compliance-hook" }
+remit-escrow = { path = "remit-escrow" }
+liquidity-pool = { path = "liquidity-pool" }
+
+# Soroban contracts are deployed as Wasm and charged per byte of code size, so
+# optimise for size (`opt-level = "z"`) while keeping `overflow-checks` on: an
+# integer overflow in a value-moving contract must trap, never wrap.
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true
+
+[profile.test]
+opt-level = 1

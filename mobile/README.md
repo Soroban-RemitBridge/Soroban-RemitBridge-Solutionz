@@ -59,7 +59,33 @@ npm start          # then press i / a, or scan the QR with Expo Go
 ```bash
 npm run typecheck   # tsc --noEmit, strict
 npm run lint        # eslint, zero warnings tolerated
+npm test            # vitest: the claim code and money formatting
 ```
+
+### What the suite covers, and how
+
+`expo-crypto` is a native module, so `vitest.config.ts` aliases it to
+`tests/expo-crypto.double.ts`, which implements both functions with
+`node:crypto`. The double is deliberate rather than convenient: the property
+under test is that **the code's actual UTF-8 bytes hash to what the chain will
+verify against**, and a stub returning a fixed digest would assert that the code
+calls a function rather than that the result is correct.
+
+The assertions worth knowing about:
+
+- **32 bytes, over 200 generated codes.** The escrow's `reveal` is `BytesN<32>`,
+  so this is the property the whole design rests on — and it is a property of the
+  generator, not of one output.
+- **The hash is over the code bytes, and explicitly not over the grouped,
+  human-facing form.** An implementation that formatted before hashing would
+  produce codes that are unclaimable forever, and the contract cannot detect it.
+- **The omitted characters are never generated** (`I`, `L`, `O`, `U`), and the
+  generator is not returning a constant.
+- **A digest is never returned for an input that cannot be honoured.** A lenient
+  implementation would hand back a plausible hash for a code no reveal could
+  satisfy.
+- **Money formatting does not go via `Number`**, asserted past `2^53` stroops and
+  on the sub-unit rounding direction.
 
 ## Builds
 

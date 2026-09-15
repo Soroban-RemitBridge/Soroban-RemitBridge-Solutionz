@@ -1,0 +1,386 @@
+// RemitBridge off-chain database.
+//
+// This schema is where the things that must not be on-chain live: names, contact
+// details, provider references and the travel-rule payloads that regulation
+// requires but that a public ledger cannot hold. The chain keeps hashes and
+// amounts; this database keeps the mapping from a hash back to a person, under
+// access control and retention rules that a ledger has no way to enforce and no
+// way to forget.
+//
+// Amounts are `Decimal(39, 0)`, not integers: Soroban amounts are `i128`, whose
+// range is roughly ±1.7e38, and a `BIGINT` would silently truncate a large
+// transfer. Prisma maps `Decimal` to a decimal type that preserves every digit.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity (PII — never leaves this database)
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  // The sender's Stellar account, when they have one. Recipients deliberately do
+  // not: that is the entire point of the agent network.
+  stellarAddress String? @unique
+  displayName  String?
+  email        String?  @unique
+  phoneE164    String?  @unique
+  countryCode  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  attestations KycAttestation[]
+  transfers    Transfer[]
+
+  @@index([countryCode])
+}
+
+enum KycTier {
+  NONE
+  STANDARD
+  ENHANCED
+}
+
+enum AttestationStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+model KycAttestation {
+  id              String            @id @default(uuid())
+  userId          String
+  tier            KycTier
+  providerId      String
+  // sha256 of the signed payload. This is the *only* value that reaches the
+  // chain; the payload itself stays here.
+  attestationHash String            @unique
+  regionId        String
+  status          AttestationStatus @default(PENDING)
+  issuedAt        DateTime          @default(now())
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  revokeReason    String?
+  // Transaction that published or revoked the hash on the compliance hook.
+  publishTxHash   String?
+  revokeTxHash    String?
+  // Provider's opaque reference, so an auditor can be routed to the source
+  // record without that record being replicated into this table.
+  providerRef     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Network configuration
+// ---------------------------------------------------------------------------
+
+model Region {
+  id          String   @id // Soroban Symbol, e.g. "NG_LAG"
+  displayName String
+  countryCode String
+  currency    String
+  minBond     Decimal  @db.Decimal(39, 0)
+  maxAgents   Int      @default(0) // 0 = uncapped
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  agents   Agent[]
+  pools    LiquidityPoolSnapshot[]
+  exposure AgentExposure[]
+}
+
+model Corridor {
+  id             String   @id // e.g. "NGN_LAG"
+  sourceCurrency String
+  destCurrency   String
+  regionId       String
+  // Mirrors the compliance hook's tier bands. Kept here so the sender app can
+  // explain the requirement without a chain round-trip; the contract remains the
+  // authority and a mismatch is reconciled by `syncCorridorConfig`.
+  tier1Max       Decimal  @db.Decimal(39, 0)
+  tier2Max       Decimal  @db.Decimal(39, 0)
+  dailyLimit     Decimal  @db.Decimal(39, 0)
+  spreadBps      Int      @default(75)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  region    Region     @relation(fields: [regionId], references: [id])
+  transfers Transfer[]
+  quotes    Quote[]
+
+  @@index([regionId])
+}
+
+// ---------------------------------------------------------------------------
+// Agents
+// ---------------------------------------------------------------------------
+
+enum AgentStatus {
+  PENDING
+  AUTHORIZED
+  SUSPENDED
+  REVOKED
+}
+
+model Agent {
+  id             String      @id @default(uuid())
+  stellarAddress String      @unique
+  // The settlement address funds are released to. Usually the same as the
+  // Stellar address; separated so an operator can rotate keys without moving
+  // the on-chain record.
+  settlementAddress String
+  legalName      String
+  tradingName    String?
+  regionId       String
+  status         AgentStatus @default(PENDING)
+  bondAmount     Decimal     @db.Decimal(39, 0)
+  bondTxHash     String?
+  contactEmail   String?
+  contactPhone   String?
+  registeredAt   DateTime    @default(now())
+  authorizedAt   DateTime?
+  suspendedAt    DateTime?
+  revokedAt      DateTime?
+  // Reconciliation counter; a rise here should trigger manual review.
+  slashCount     Int         @default(0)
+  updatedAt      DateTime    @updatedAt
+
+  region     Region                @relation(fields: [regionId], references: [id])
+  exposure   AgentExposure[]
+  alerts     AgentFloatAlert[]
+  topUps     LiquidityTopUpRequest[]
+  transfers  Transfer[]
+
+  @@index([regionId, status])
+}
+
+enum AgentAlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model AgentExposure {
+  id         String   @id @default(uuid())
+  agentId    String
+  regionId   String
+  // Float currently drawn from the pool by this agent.
+  drawnAmount Decimal @db.Decimal(39, 0) @default(0)
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  agent  Agent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  region Region @relation(fields: [regionId], references: [id])
+
+  @@unique([agentId, regionId])
+}
+
+model AgentFloatAlert {
+  id         String           @id @default(uuid())
+  agentId    String
+  regionId   String
+  // `FLOAT_LOW` — agent is running out of cash to hand over.
+  // `COLLATERAL_TIGHT` — bond is close to the draw, so the next draw will fail.
+  // `POOL_UTILIZATION_HIGH` — the region as a whole is short of float.
+  kind       String
+  thresholdBps Int
+  observedBps  Int
+  status     AgentAlertStatus @default(OPEN)
+  createdAt  DateTime         @default(now())
+  resolvedAt DateTime?
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([status, kind])
+  @@index([agentId, status])
+}
+
+enum TopUpRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXECUTED
+  FAILED
+}
+
+model LiquidityTopUpRequest {
+  id              String             @id @default(uuid())
+  agentId         String
+  regionId        String
+  amountRequested Decimal            @db.Decimal(39, 0)
+  reason          String
+  status          TopUpRequestStatus @default(PENDING)
+  requestedBy     String
+  approvedBy      String?
+  decisionNote    String?
+  // The `draw_liquidity` transaction, once executed.
+  txHash          String?
+  failureReason   String?
+  createdAt       DateTime           @default(now())
+  decidedAt       DateTime?
+  executedAt      DateTime?
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([agentId, status])
+}
+
+model LiquidityPoolSnapshot {
+  id             String   @id @default(uuid())
+  regionId       String
+  totalDeposited Decimal  @db.Decimal(39, 0)
+  totalDrawn     Decimal  @db.Decimal(39, 0)
+  available      Decimal  @db.Decimal(39, 0)
+  utilizationBps Int
+  depositorCount Int
+  active         Boolean
+  capturedAt     DateTime @default(now())
+
+  region Region @relation(fields: [regionId], references: [id])
+
+  @@index([regionId, capturedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Transfers and the indexed event log
+// ---------------------------------------------------------------------------
+
+enum TransferStatus {
+  PENDING
+  CLAIMED
+  REFUNDED
+  CANCELLED
+}
+
+model Transfer {
+  id            BigInt         @id // on-chain transfer id
+  senderId      String
+  agentId       String?
+  corridorId    String
+  amount        Decimal        @db.Decimal(39, 0)
+  fee           Decimal        @db.Decimal(39, 0) @default(0)
+  payout        Decimal        @db.Decimal(39, 0) @default(0)
+  tokenAddress  String
+  claimHash     String
+  expiry        DateTime
+  status        TransferStatus @default(PENDING)
+  createdAt     DateTime
+  settledAt     DateTime?
+  claimedBy     String?
+  createTxHash  String?
+  settleTxHash  String?
+  updatedAt     DateTime       @updatedAt
+
+  sender   User     @relation(fields: [senderId], references: [id])
+  agent    Agent?   @relation(fields: [agentId], references: [id])
+  corridor Corridor @relation(fields: [corridorId], references: [id])
+  events   TransferEvent[]
+
+  @@index([status, expiry])
+  @@index([corridorId, createdAt])
+  @@index([agentId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+/// Raw, normalised contract events. The transfer table above is a projection of
+/// this log, so the read model can be rebuilt from scratch by replaying it — the
+/// property that makes a schema change survivable.
+model ChainEvent {
+  id          String   @id @default(uuid())
+  contractId  String
+  topic       String
+  ledger      Int
+  // Ordering within a ledger. Together with `ledger` this is the event log's
+  // primary sort order.
+  eventIndex  Int
+  txHash      String
+  // Decoded payload as JSON for querying.
+  payload     Json
+  // Original base64 XDR, retained when INDEXER_STORE_RAW_XDR is on: it is the
+  // only artefact that lets a decoding bug be diagnosed after the fact.
+  rawXdr      String?
+  transferId  BigInt?
+  occurredAt  DateTime
+  ingestedAt  DateTime @default(now())
+
+  transfer Transfer? @relation(fields: [transferId], references: [id])
+
+  @@unique([contractId, ledger, eventIndex])
+  @@index([topic, ledger])
+  @@index([transferId])
+}
+
+model IndexerCursor {
+  id          String   @id @default(uuid())
+  contractId  String   @unique
+  lastLedger  Int
+  lastEventId String?
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Quoting and audit
+// ---------------------------------------------------------------------------
+
+model Quote {
+  id             String   @id @default(uuid())
+  corridorId     String
+  // Mid-market rate as a rational string ("1532.4412" NGN per USD) so no
+  // floating-point rounding is baked into a financial record.
+  midRate        String
+  spreadBps      Int
+  clientRate     String
+  amount         Decimal  @db.Decimal(39, 0)
+  fee            Decimal  @db.Decimal(39, 0)
+  total          Decimal  @db.Decimal(39, 0)
+  oracleSource   String
+  // Detached signature over the quote body. This is what lets a client prove the
+  // rate it was shown is the rate the network quoted.
+  signature      String
+  signingKey     String
+  validUntil     DateTime
+  consumedByTransfer BigInt?
+  createdAt      DateTime @default(now())
+
+  corridor Corridor @relation(fields: [corridorId], references: [id])
+
+  @@index([corridorId, createdAt])
+  @@index([validUntil])
+}
+
+/// Append-only audit trail. Written for every state-changing operator action:
+/// threshold changes, agent authorization, slash approvals, top-up decisions.
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorId     String
+  actorType   String   @default("operator")
+  action      String
+  subjectType String
+  subjectId   String
+  // Before/after values so a reviewer can see what changed, not just that
+  // something did.
+  before      Json?
+  after       Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([subjectType, subjectId, createdAt])
+  @@index([action, createdAt])
+}

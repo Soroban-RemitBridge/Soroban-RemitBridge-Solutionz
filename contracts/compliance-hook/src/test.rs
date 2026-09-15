@@ -574,3 +574,156 @@ fn corridors_are_listed_after_configuration() {
     assert_eq!(list.len(), 1);
     assert_eq!(list.get(0).unwrap(), corridor());
 }
+
+/* ------------------------------------------------------------------ */
+/* authority                                                           */
+/* ------------------------------------------------------------------ */
+
+/// The hook owns the pause switch, every corridor's tier bands and the attester
+/// allowlist. The separate-attester-key design rests entirely on all three being
+/// admin-only: if a hot attester key could reach any of them, then compromising
+/// the most externally exposed process in the system -- the one that accepts
+/// document uploads and third-party webhooks -- would also hand over the gate.
+///
+/// No blanket auth mocking here, deliberately. `mock_all_auths` would make this
+/// test vacuous, because the whole question is whether the authorization tree
+/// can be satisfied by the wrong signer.
+#[test]
+fn only_the_admin_can_reconfigure_the_gate() {
+    let env = Env::default();
+    let admin = Address::generate(&env);
+    let attester = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let escrow = env.register(MockEscrow, ());
+
+    let contract_id = env.register(ComplianceHook, ());
+    let client = ComplianceHookClient::new(&env, &contract_id);
+
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "initialize",
+            args: (&admin,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.initialize(&admin);
+
+    // Each call is signed by the attacker. The contract calls `require_auth` on
+    // the stored admin address instead, so the invocation's own signature is
+    // irrelevant and `require_auth` cannot be satisfied.
+    env.mock_auths(&[MockAuth {
+        address: &attacker,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "set_operator",
+            args: (&attester, &true).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(client.try_set_operator(&attester, &true).is_err());
+
+    env.mock_auths(&[MockAuth {
+        address: &attacker,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "set_tier_thresholds",
+            args: (thresholds(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(client.try_set_tier_thresholds(&thresholds()).is_err());
+
+    env.mock_auths(&[MockAuth {
+        address: &attacker,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "set_escrow",
+            args: (&escrow,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(client.try_set_escrow(&escrow).is_err());
+
+    env.mock_auths(&[MockAuth {
+        address: &attacker,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "set_paused",
+            args: (&true,).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(client.try_set_paused(&true).is_err());
+
+    // None of it took effect. Assertions on state, not just on the return
+    // values: a refusal that still wrote something is the failure mode that
+    // matters here.
+    assert_eq!(client.list_corridors().len(), 0);
+    assert!(client.get_attestation(&attester).is_none());
+
+    // And the attacker gained no publishing rights by trying. Asserted as "no
+    // record was written" rather than as one specific error: whether the call
+    // fails on the allowlist or on the missing signature is an implementation
+    // detail, but a written attestation would not be.
+    let expires_at = env.ledger().timestamp() + 30 * DAY;
+    assert!(client
+        .try_publish_attestation(
+            &attacker,
+            &attester,
+            &KycTier::Standard,
+            &hash(&env, 3),
+            &region(),
+            &symbol_short!("mock"),
+            &expires_at,
+        )
+        .is_err());
+    assert!(client.get_attestation(&attester).is_none());
+}
+
+/// Revoking the hot key has to be a real cut-off, in both directions of its
+/// authority. The failure mode this guards against is an allowlist that is
+/// consulted on publish but not on revoke, which would leave a compromised key
+/// able to withdraw evidence of its own misuse.
+#[test]
+fn revoking_an_attester_closes_both_writes() {
+    let f = setup();
+    let subject = Address::generate(&f.env);
+    attest(&f, &subject, KycTier::Standard, 30);
+
+    f.client.set_operator(&f.attester, &false);
+
+    let expires_at = f.env.ledger().timestamp() + 30 * DAY;
+    assert_eq!(
+        f.client.try_publish_attestation(
+            &f.attester,
+            &subject,
+            &KycTier::Enhanced,
+            &hash(&f.env, 9),
+            &region(),
+            &symbol_short!("mock"),
+            &expires_at,
+        ),
+        Err(Ok(ComplianceError::NotAnAttester))
+    );
+    assert_eq!(
+        f.client
+            .try_revoke_attestation(&f.attester, &subject, &symbol_short!("fraud")),
+        Err(Ok(ComplianceError::NotAnAttester))
+    );
+
+    // The verdict it published while authorized survives, unrevoked. Losing the
+    // key is not itself a sanctions decision, so it must not silently invalidate
+    // a verdict the operator accepted -- or silently revoke one it did not.
+    assert!(!f.client.get_attestation(&subject).unwrap().revoked);
+
+    // Re-granting restores exactly the authority that was taken away. The grant
+    // is one flag, not a re-registration, so the existing record is untouched.
+    f.client.set_operator(&f.attester, &true);
+    assert!(f
+        .client
+        .try_revoke_attestation(&f.attester, &subject, &symbol_short!("fraud"))
+        .is_ok());
+    assert!(f.client.get_attestation(&subject).unwrap().revoked);
+}

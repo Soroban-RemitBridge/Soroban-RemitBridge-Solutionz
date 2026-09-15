@@ -1,0 +1,27 @@
+{
+  "name": "@remitbridge/scripts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RemitBridge deployment tooling: build, deploy and wire the Soroban contracts",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:contracts": "bash ./build-contracts.sh",
+    "deploy": "tsx src/deploy-contracts.ts",
+    "deploy:dry-run": "tsx src/deploy-contracts.ts --dry-run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

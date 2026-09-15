@@ -1,0 +1,85 @@
+{
+  "$comment": [
+    "Deployment configuration. Copy to `testnet.json` and edit — `testnet.json` is gitignored because it carries region-specific commercial settings.",
+    "Amounts are in stroops (1 XLM = 10000000), written as strings so no precision is lost in the JSON.",
+    "This file is the single source of truth for both the on-chain configuration (deployed by `npm run deploy`) and the off-chain read model (seeded into Postgres by `backend/prisma/seed.ts`), so the two cannot describe different networks."
+  ],
+
+  "regions": [
+    {
+      "id": "NG_LAG",
+      "displayName": "Lagos, Nigeria",
+      "countryCode": "NG",
+      "currency": "NGN",
+      "minBond": "5000000000",
+      "maxAgents": 0,
+      "utilizationCapBps": 8000
+    },
+    {
+      "id": "KE_NBO",
+      "displayName": "Nairobi, Kenya",
+      "countryCode": "KE",
+      "currency": "KES",
+      "minBond": "3000000000",
+      "maxAgents": 0,
+      "utilizationCapBps": 7500
+    }
+  ],
+
+  "corridors": [
+    {
+      "id": "NGN_LAG",
+      "regionId": "NG_LAG",
+      "sourceCurrency": "USD",
+      "destCurrency": "NGN",
+      "tier1Max": "500000000",
+      "tier2Max": "5000000000",
+      "dailyLimit": "15000000000",
+      "spreadBps": 75
+    },
+    {
+      "id": "KES_NBO",
+      "regionId": "KE_NBO",
+      "sourceCurrency": "USD",
+      "destCurrency": "KES",
+      "tier1Max": "400000000",
+      "tier2Max": "4000000000",
+      "dailyLimit": "12000000000",
+      "spreadBps": 85
+    }
+  ],
+
+  "$complianceComment": [
+    "Per-corridor tier bands, as the compliance hook enforces them.",
+    "`tier1_max`: at or below this, no attestation is needed.",
+    "`tier2_max`: above tier1 and at or below this, a STANDARD attestation is required.",
+    "Above tier2, an ENHANCED attestation is required.",
+    "These are the numbers the contract holds. The corridor block above mirrors them for the read model."
+  ],
+  "complianceTiers": [
+    {
+      "corridorId": "NGN_LAG",
+      "tier1Max": "500000000",
+      "tier2Max": "5000000000",
+      "enhancedDailyLimit": "15000000000"
+    },
+    {
+      "corridorId": "KES_NBO",
+      "tier1Max": "400000000",
+      "tier2Max": "4000000000",
+      "enhancedDailyLimit": "12000000000"
+    }
+  ],
+
+  "$escrowComment": "Fee charged at settlement, in basis points. 200 = 2%.",
+  "escrow": {
+    "feeBps": 200,
+    "maxExpirySecs": 604800
+  },
+
+  "$poolComment": "Collateral ratio is the bond an agent must hold per unit of float drawn. 15000 = 150%.",
+  "liquidityPool": {
+    "collateralRatioBps": 15000,
+    "defaultUtilizationCapBps": 8000
+  }
+}

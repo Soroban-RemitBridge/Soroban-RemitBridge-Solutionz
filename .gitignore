@@ -59,3 +59,8 @@ Thumbs.db
 # ---------- Generated deploy artifacts ----------
 deployed-addresses.json
 !deployed-addresses.example.json
+
+# Deployment configuration carries region-specific commercial settings
+# (bonds, tier bands, spreads). The example is committed; a real one is not.
+scripts/config/testnet.json
+scripts/config/mainnet.json

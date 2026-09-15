@@ -1,0 +1,41 @@
+@import 'tailwindcss';
+
+/**
+ * Theme tokens.
+ *
+ * Tailwind v4 reads theme values from CSS custom properties rather than a JS
+ * config file, which keeps the palette in the same language the styles are
+ * written in. A deliberately small palette: the status colours carry meaning in
+ * this console (`PENDING`, `AUTHORIZED`, `SUSPENDED`, `REVOKED`), so they are
+ * consumed through one `Badge` component rather than invented at call sites —
+ * a colour chosen ad hoc is how "suspended" ends up looking reassuring.
+ */
+@theme {
+  --color-ink-50: #f6f7f9;
+  --color-ink-100: #eceef2;
+  --color-ink-200: #d5dae3;
+  --color-ink-300: #b0b9c8;
+  --color-ink-400: #8492a8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #4e5b72;
+  --color-ink-700: #404a5c;
+  --color-ink-800: #37404e;
+  --color-ink-900: #1f2530;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-ink-50 text-ink-900 antialiased;
+  }
+
+  /* Visible focus everywhere. An operator console is used with a keyboard while
+     someone reads a figure off a screen, and a focus ring that only appears on
+     some controls is how a decision gets made on the wrong row. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ink-500 ring-offset-2;
+  }
+}

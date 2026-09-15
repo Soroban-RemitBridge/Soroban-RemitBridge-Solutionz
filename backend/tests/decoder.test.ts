@@ -1,7 +1,13 @@
 import { nativeToScVal, xdr } from '@stellar/stellar-sdk';
 import { describe, expect, it } from 'vitest';
 
-import { decodeEvent, UndecodableEventError, type RawContractEvent } from '../src/event-indexer/decoder.js';
+import { EVENT_TOPICS } from '../src/config/constants.js';
+import {
+  decodeEvent,
+  UndecodableEventError,
+  __testing,
+  type RawContractEvent,
+} from '../src/event-indexer/decoder.js';
 
 /**
  * These tests encode real `ScVal`s rather than hand-written base64 blobs. A
@@ -91,5 +97,26 @@ describe('decodeEvent', () => {
     const raw = event('tr_create', [1n]);
     raw.topicXdr[0] = xdr.ScVal.scvU32(5).toXDR('base64');
     expect(() => decodeEvent(raw)).toThrow(/not a symbol/);
+  });
+});
+
+/**
+ * The drift guard.
+ *
+ * `EVENT_TOPICS` is transcribed from the four contracts' emission code, and the
+ * decoder has to know about every symbol in it. The two are edited by hand, so
+ * they can disagree — and the symptom is not a crash: the indexer logs the event
+ * as undecodable, skips it, and the `ChainEvent` row is never written, so the
+ * event disappears from the audit timeline while everything else looks healthy.
+ *
+ * This test is what makes that class of omission a build failure.
+ */
+describe('topic coverage', () => {
+  it('maps every declared event topic to a decodable kind', () => {
+    const unmapped = Object.entries(EVENT_TOPICS)
+      .filter(([, symbol]) => __testing.TOPIC_TO_KIND[symbol] === undefined)
+      .map(([name, symbol]) => `${name} (${symbol})`);
+
+    expect(unmapped).toEqual([]);
   });
 });

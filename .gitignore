@@ -29,6 +29,13 @@ coverage/
 .vitest/
 .vercel/
 
+# ---------- Playwright (operator console e2e) ----------
+# Reports and traces are build output: the failure is reproducible from the spec.
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
 # ---------- Expo / React Native ----------
 .expo/
 .expo-shared/

@@ -11,10 +11,29 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts'] },
+  {
+    ignores: [
+      '.next/**',
+      'node_modules/**',
+      'next-env.d.ts',
+      'playwright-report/**',
+      'test-results/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   react.configs.flat.recommended,
+  // The e2e stub is plain Node ESM, so it needs the Node globals and none of the
+  // browser ones. It is linted rather than excluded because it is the one file in
+  // the suite that decides what the app is tested against.
+  {
+    files: ['e2e/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+    // These are Node scripts rather than React, but the plugin's recommended
+    // config still applies; telling it the version keeps it from warning about
+    // files that have nothing to do with React.
+    settings: { react: { version: 'detect' } },
+  },
   {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {

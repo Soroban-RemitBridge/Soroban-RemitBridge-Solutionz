@@ -183,6 +183,33 @@ const kycConfigSchema = z.object({
   webhookSignatureRequired: z.boolean(),
 });
 
+/**
+ * The schemas, exported for the test suite.
+ *
+ * This console's correctness is mostly a matter of what it *refuses* to render,
+ * and that judgement lives here rather than in any component: an amount that
+ * arrives as a JSON number, a status the console does not know, or a pool figure
+ * missing its staleness flag all have to fail at this boundary or they render as
+ * a confident wrong figure in front of an operator who is about to act on it.
+ *
+ * Exposing them is what makes that testable without a browser, which matters
+ * because the alternative -- a component test suite -- is a much larger thing to
+ * add, and would test the same assertions through a less direct route.
+ */
+export const __testing = {
+  regionSchema,
+  corridorSchema,
+  agentSchema,
+  agentDetailSchema,
+  attestationSchema,
+  transferSchema,
+  alertSchema,
+  topUpSchema,
+  poolHealthSchema,
+  readinessSchema,
+  kycConfigSchema,
+};
+
 function query(params: Record<string, string | number | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

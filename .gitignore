@@ -1,0 +1,61 @@
+# ---------- Secrets ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.secrets/
+
+# ---------- Rust / Soroban ----------
+target/
+**/target/
+contracts/**/test_snapshots/
+*.rs.bk
+Cargo.lock.orig
+
+# ---------- Node / JS / TS ----------
+node_modules/
+.pnpm-store/
+.yarn/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+.next/
+out/
+dist/
+build/
+coverage/
+.vitest/
+.vercel/
+
+# ---------- Expo / React Native ----------
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+mobile/ios/
+mobile/android/
+
+# ---------- Python (deploy tooling) ----------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---------- Editors / OS ----------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# ---------- Generated deploy artifacts ----------
+deployed-addresses.json
+!deployed-addresses.example.json

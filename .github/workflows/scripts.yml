@@ -32,8 +32,10 @@ jobs:
           cache: npm
           cache-dependency-path: scripts/package-lock.json
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Matches `rust-toolchain.toml`, which is what rustup will actually select.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.98.1
           targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "interfaces",
   "agent-registry",
   "compliance-hook",
   "remit-escrow",
@@ -10,7 +11,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.84.0"
+rust-version = "1.89.0"
 license = "Apache-2.0"
 repository = "https://github.com/Soroban-RemitBridge/Soroban-RemitBridge-Solutionz"
 authors = ["RemitBridge Contributors"]
@@ -19,10 +20,9 @@ description = "Open, compliant last-mile remittance cash-out network on Stellar/
 
 [workspace.dependencies]
 soroban-sdk = "22.0.1"
-agent-registry = { path = "agent-registry" }
-compliance-hook = { path = "compliance-hook" }
-remit-escrow = { path = "remit-escrow" }
-liquidity-pool = { path = "liquidity-pool" }
+# Contracts depend on the interface crate, never on each other: see the crate
+# docs in `interfaces/src/lib.rs` for why that distinction is load-bearing.
+remit-interfaces = { path = "interfaces" }
 
 # Soroban contracts are deployed as Wasm and charged per byte of code size, so
 # optimise for size (`opt-level = "z"`) while keeping `overflow-checks` on: an

@@ -18,17 +18,22 @@ pub fn agent_registered(env: &Env, agent: &Address, region_id: &Symbol, bond: i1
     );
 }
 
-/// An agent's lifecycle state changed (authorize / suspend / revoke / re-activate).
+/// An agent's lifecycle state changed (authorize / suspend / revoke /
+/// auto-suspend after an under-collateralising slash).
+///
+/// `reason` is the operator's own tag (`approved`, `fraud`, `underwater`, ...)
+/// — a symbol, not free text, so the indexer can group by cause.
 pub fn agent_status_changed(
     env: &Env,
     agent: &Address,
     region_id: &Symbol,
     from: AgentStatus,
     to: AgentStatus,
+    reason: &Symbol,
 ) {
     env.events().publish(
         (symbol_short!("agent_st"), agent.clone(), region_id.clone()),
-        (from, to),
+        (from, to, reason.clone()),
     );
 }
 

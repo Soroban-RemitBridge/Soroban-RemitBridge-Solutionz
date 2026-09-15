@@ -1,0 +1,71 @@
+name: Feature request
+description: Propose a capability the network does not have yet
+title: 'feat: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the roadmap in [README.md](../README.md) first — several obvious
+        next steps are already listed there with the reasoning for their
+        current position.
+
+        If this changes a structural decision, read the
+        [ADRs](../docs/adr/README.md) and reference the one it touches. Each
+        record states the cost that was accepted, which is usually the objection
+        to address.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: |
+        Describe the user or operator problem, not the solution. Who is stuck,
+        what are they trying to do, and what happens instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: The shape of the change, at whatever level of detail you have.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        Including "do nothing". If an existing design already solves this and you
+        are proposing to change it, say what is wrong with the current approach
+        concretely.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: trust
+    attributes:
+      label: Trust boundary
+      description: |
+        Tick anything this would move. These are the questions a reviewer will
+        ask, so answering them here shortens the review.
+      options:
+        - label: Adds a privileged (admin/attester) call, or changes who holds one
+        - label: Puts new data on-chain
+        - label: Reads, stores or logs new personal data
+        - label: Adds a third-party service or dependency
+        - label: Changes a compliance rule, tier boundary or reporting behaviour
+        - label: Changes how a recipient is identified or paid
+        - label: None of the above
+
+  - type: textarea
+    id: cost
+    attributes:
+      label: What gets worse
+      description: |
+        Every feature moves a dial. If you cannot name the side that gets worse,
+        it is worth another pass before filing — the answer is rarely "nothing".
+    validations:
+      required: true

@@ -1,0 +1,14 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Soroban-RemitBridge-Solutionz/Soroban-RemitBridge-Solutionz/security/advisories/new
+    about: Report privately. Do not open a public issue for a security problem.
+  - name: Documented assumptions and trade-offs
+    url: https://github.com/Soroban-RemitBridge-Solutionz/Soroban-RemitBridge-Solutionz/blob/main/docs/assumptions.md
+    about: Check here before filing — the behaviour may be a decision, not a bug.
+  - name: Architecture decision records
+    url: https://github.com/Soroban-RemitBridge-Solutionz/Soroban-RemitBridge-Solutionz/tree/main/docs/adr
+    about: Why the system is shaped this way, including the costs that were accepted.
+  - name: Operational runbook
+    url: https://github.com/Soroban-RemitBridge-Solutionz/Soroban-RemitBridge-Solutionz/blob/main/docs/runbook.md
+    about: Diagnosing a running deployment, symptom by symptom.

@@ -1,0 +1,101 @@
+# Dependabot configuration.
+#
+# Four npm projects, one Cargo workspace and the Actions themselves, each as its
+# own entry. That is not over-configuration: the components have independent
+# lockfiles and independent risk profiles, so a single grouped update would
+# produce one pull request that mixes a Next.js major with a lint patch, and
+# nobody can review that well.
+#
+# The directory names are in every commit and PR title so a failure names its own
+# component -- the same principle the CI workflows follow.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'fix(deps)'
+      include: scope
+    groups:
+      backend-dev:
+        dependency-type: development
+      backend-runtime:
+        dependency-type: production
+
+  - package-ecosystem: npm
+    directory: /admin-web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'fix(deps)'
+      include: scope
+    groups:
+      admin-web-dev:
+        dependency-type: development
+      admin-web-runtime:
+        dependency-type: production
+
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'fix(deps)'
+      include: scope
+    # Expo's packages move as a release train. Ungrouped updates would produce a
+    # stream of individually-unmergeable PRs, because `expo` and `expo-*` have to
+    # agree with each other.
+    groups:
+      expo:
+        patterns:
+          - 'expo*'
+          - 'react-native*'
+      mobile-dev:
+        dependency-type: development
+
+  - package-ecosystem: npm
+    directory: /scripts
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'fix(deps)'
+      include: scope
+    groups:
+      scripts:
+        patterns: ['*']
+
+  - package-ecosystem: cargo
+    directory: /contracts
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'build(contracts)'
+      include: scope
+    # `soroban-sdk` is pinned deliberately: its version decides the Wasm ABI, so
+    # an upgrade is a deploy-time decision and not a routine bump.
+    ignore:
+      - dependency-name: soroban-sdk
+      - dependency-name: soroban-env-*
+      - dependency-name: soroban-spec
+    groups:
+      contracts:
+        patterns: ['*']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'ci'
+      include: scope
+    groups:
+      actions:
+        patterns: ['*']

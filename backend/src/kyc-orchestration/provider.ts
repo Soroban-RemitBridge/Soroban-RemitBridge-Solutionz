@@ -133,7 +133,7 @@ export function attestationHashOf(result: Pick<VerificationResult, 'providerId' 
     provider_ref: result.providerRef,
     tier: result.tier,
     payload: result.raw,
-  } as JsonValue);
+  });
   return createHash('sha256').update(canonical, 'utf8').digest();
 }
 

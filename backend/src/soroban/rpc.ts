@@ -5,7 +5,7 @@ import {
   TransactionBuilder,
   scValToNative,
   rpc,
-  xdr,
+  type xdr,
 } from '@stellar/stellar-sdk';
 
 import { env } from '../config/env.js';
@@ -37,8 +37,8 @@ export function keypairFromSecret(secret: string): Keypair {
 }
 
 export interface InvocationResult<T> {
-  /** Decoded return value, absent for simulations. */
-  value?: T;
+  /** Decoded return value; absent when the contract returns nothing. */
+  value?: T | undefined;
   /** Transaction hash once submitted. */
   hash?: string;
   /** Ledger the transaction was included in. */

@@ -1,5 +1,9 @@
 [toolchain]
-channel = "1.84.0"
+# `edition2024` manifests appear in modern transitive dependencies of
+# soroban-sdk 22 (crypto-common, time, darling), so anything below 1.85 cannot
+# even parse the dependency graph. Pinned rather than `stable` so CI, reviewers
+# and local devs compile byte-identical Wasm.
+channel = "1.98.1"
 components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown", "wasm32v1-none"]
 profile = "minimal"

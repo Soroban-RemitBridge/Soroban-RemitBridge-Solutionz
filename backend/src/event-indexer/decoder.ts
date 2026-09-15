@@ -37,6 +37,9 @@ export type EventKind =
   | 'pool.withdrawn'
   | 'pool.drawn'
   | 'pool.repaid'
+  | 'pool.config_updated'
+  | 'pool.wiring_updated'
+  | 'pool.admin_changed'
   | 'escrow.config_updated'
   | 'escrow.wiring_updated'
   | 'escrow.admin_changed';
@@ -66,6 +69,9 @@ const TOPIC_TO_KIND: Record<string, EventKind> = {
   [EVENT_TOPICS.poolWithdraw]: 'pool.withdrawn',
   [EVENT_TOPICS.poolDraw]: 'pool.drawn',
   [EVENT_TOPICS.poolRepay]: 'pool.repaid',
+  [EVENT_TOPICS.poolConfig]: 'pool.config_updated',
+  [EVENT_TOPICS.poolWire]: 'pool.wiring_updated',
+  [EVENT_TOPICS.poolAdmin]: 'pool.admin_changed',
   [EVENT_TOPICS.escrowConfig]: 'escrow.config_updated',
   [EVENT_TOPICS.escrowWiring]: 'escrow.wiring_updated',
   [EVENT_TOPICS.escrowAdmin]: 'escrow.admin_changed',

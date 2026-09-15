@@ -60,7 +60,12 @@ export default async function AgentsPage({
         </div>
       </Card>
 
-      <Card title="Registered agents" description={`${result.ok ? result.data.agents.length : 0} shown`}>
+      <Card
+        title="Registered agents"
+        // Not `0 shown` when the read failed: an unknown count must not read as a
+        // real one, which is the same rule the panels below follow.
+        description={result.ok ? `${result.data.agents.length} shown` : 'Count unavailable'}
+      >
         {!result.ok ? (
           <ErrorState title="Could not load agents" message={result.message} />
         ) : result.data.agents.length === 0 ? (

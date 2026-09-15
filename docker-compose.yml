@@ -1,0 +1,125 @@
+# Local development stack: Postgres, a schema step, the API, and the indexer.
+#
+# This is a *development* compose file. It runs one replica of everything, uses
+# a plaintext password, and exposes Postgres on the host — none of which belongs
+# in a production deployment. The deploy target for real environments is a
+# managed platform (Railway, Render, Fly.io); see the README.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: remitbridge
+      POSTGRES_PASSWORD: remitbridge
+      POSTGRES_DB: remitbridge
+    ports:
+      # Exposed so `npm run dev` on the host can reach the same database the
+      # containers use. Development only.
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The API must not start before Postgres accepts connections, or the first
+      # boot fails with a connection error that looks like a configuration
+      # mistake.
+      test: ['CMD-SHELL', 'pg_isready -U remitbridge -d remitbridge']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # One-shot schema step, run to completion before anything else starts.
+  #
+  # Separate from the API so two replicas cannot race to migrate the same
+  # database, and so a migration failure stops the whole stack instead of
+  # producing a half-started deployment.
+  migrate:
+    build:
+      context: ./backend
+    command: ['node', '-e', 'process.exit(0)']
+    environment:
+      DATABASE_URL: postgresql://remitbridge:remitbridge@postgres:5432/remitbridge?schema=public
+      SOROBAN_RPC_URL: ${SOROBAN_RPC_URL:-https://soroban-testnet.stellar.org}
+      STELLAR_NETWORK_PASSPHRASE: ${STELLAR_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}
+      CONTRACT_ESCROW: ${CONTRACT_ESCROW:?set CONTRACT_ESCROW in .env}
+      CONTRACT_AGENT_REGISTRY: ${CONTRACT_AGENT_REGISTRY:?set CONTRACT_AGENT_REGISTRY in .env}
+      CONTRACT_COMPLIANCE_HOOK: ${CONTRACT_COMPLIANCE_HOOK:?set CONTRACT_COMPLIANCE_HOOK in .env}
+      CONTRACT_LIQUIDITY_POOL: ${CONTRACT_LIQUIDITY_POOL:?set CONTRACT_LIQUIDITY_POOL in .env}
+      ATTESTER_SECRET_KEY: ${ATTESTER_SECRET_KEY:?set ATTESTER_SECRET_KEY in .env}
+      OPERATOR_SECRET_KEY: ${OPERATOR_SECRET_KEY:?set OPERATOR_SECRET_KEY in .env}
+      TREASURY_PUBLIC_KEY: ${TREASURY_PUBLIC_KEY:?set TREASURY_PUBLIC_KEY in .env}
+      QUOTE_SIGNING_SECRET_KEY: ${QUOTE_SIGNING_SECRET_KEY:?set QUOTE_SIGNING_SECRET_KEY in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://remitbridge:remitbridge@postgres:5432/remitbridge?schema=public
+      STELLAR_NETWORK: ${STELLAR_NETWORK:-testnet}
+      SOROBAN_RPC_URL: ${SOROBAN_RPC_URL:-https://soroban-testnet.stellar.org}
+      STELLAR_NETWORK_PASSPHRASE: ${STELLAR_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}
+      CONTRACT_ESCROW: ${CONTRACT_ESCROW:?set CONTRACT_ESCROW in .env}
+      CONTRACT_AGENT_REGISTRY: ${CONTRACT_AGENT_REGISTRY:?set CONTRACT_AGENT_REGISTRY in .env}
+      CONTRACT_COMPLIANCE_HOOK: ${CONTRACT_COMPLIANCE_HOOK:?set CONTRACT_COMPLIANCE_HOOK in .env}
+      CONTRACT_LIQUIDITY_POOL: ${CONTRACT_LIQUIDITY_POOL:?set CONTRACT_LIQUIDITY_POOL in .env}
+      ATTESTER_SECRET_KEY: ${ATTESTER_SECRET_KEY:?set ATTESTER_SECRET_KEY in .env}
+      OPERATOR_SECRET_KEY: ${OPERATOR_SECRET_KEY:?set OPERATOR_SECRET_KEY in .env}
+      TREASURY_PUBLIC_KEY: ${TREASURY_PUBLIC_KEY:?set TREASURY_PUBLIC_KEY in .env}
+      QUOTE_SIGNING_SECRET_KEY: ${QUOTE_SIGNING_SECRET_KEY:?set QUOTE_SIGNING_SECRET_KEY in .env}
+      KYC_PROVIDER: ${KYC_PROVIDER:-mock}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://127.0.0.1:4000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # The indexer runs as its own process so it can be scaled, restarted and
+  # alerted on independently of the API. A crashed indexer must not take the API
+  # down with it, and a busy API must not starve it of the loop it needs.
+  indexer:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    command: ['node', 'dist/event-indexer/cli.js']
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://remitbridge:remitbridge@postgres:5432/remitbridge?schema=public
+      STELLAR_NETWORK: ${STELLAR_NETWORK:-testnet}
+      SOROBAN_RPC_URL: ${SOROBAN_RPC_URL:-https://soroban-testnet.stellar.org}
+      STELLAR_NETWORK_PASSPHRASE: ${STELLAR_NETWORK_PASSPHRASE:-Test SDF Network ; September 2015}
+      CONTRACT_ESCROW: ${CONTRACT_ESCROW:?set CONTRACT_ESCROW in .env}
+      CONTRACT_AGENT_REGISTRY: ${CONTRACT_AGENT_REGISTRY:?set CONTRACT_AGENT_REGISTRY in .env}
+      CONTRACT_COMPLIANCE_HOOK: ${CONTRACT_COMPLIANCE_HOOK:?set CONTRACT_COMPLIANCE_HOOK in .env}
+      CONTRACT_LIQUIDITY_POOL: ${CONTRACT_LIQUIDITY_POOL:?set CONTRACT_LIQUIDITY_POOL in .env}
+      ATTESTER_SECRET_KEY: ${ATTESTER_SECRET_KEY:?set ATTESTER_SECRET_KEY in .env}
+      OPERATOR_SECRET_KEY: ${OPERATOR_SECRET_KEY:?set OPERATOR_SECRET_KEY in .env}
+      TREASURY_PUBLIC_KEY: ${TREASURY_PUBLIC_KEY:?set TREASURY_PUBLIC_KEY in .env}
+      QUOTE_SIGNING_SECRET_KEY: ${QUOTE_SIGNING_SECRET_KEY:?set QUOTE_SIGNING_SECRET_KEY in .env}
+      INDEXER_START_LEDGER: ${INDEXER_START_LEDGER:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:

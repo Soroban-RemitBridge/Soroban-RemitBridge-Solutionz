@@ -1,9 +1,13 @@
 name: frontends
 
 # The two frontends share a stack and a quality bar, so they share a workflow.
-# Both are checked with the same three steps, in the same order, for the same
-# reason: a type error is a defect, a lint error is a defect, and a build failure
-# is the one users would actually see.
+# Each is checked with the same steps, in the same order, for the same reason: a
+# type error is a defect, a lint error is a defect, a failing test is a defect,
+# and a build failure is the one users would actually see.
+#
+# The console's end-to-end suite is a separate job rather than a step, so that a
+# browser download and a container's shared libraries are paid for once, and so a
+# failure says which kind of check broke.
 
 on:
   push:
@@ -44,6 +48,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The console's pure modules: the response boundary (a money value sent as
+      # a number, an undeclared field, an unrecognised status) and the money
+      # formatters. They run in Node under vitest, so no browser is involved —
+      # and an undeclared field is exactly the defect the type layer cannot see,
+      # because it arrives at runtime rather than at compile time.
+      - name: Test
+        run: npm test
+
       # `next build` renders every route. The pages fetch with
       # `force-dynamic`, so a build must succeed with no backend reachable —
       # which is also the state a reviewer opening the Vercel preview will be in.
@@ -54,6 +66,50 @@ jobs:
 
       - name: Audit
         run: npm audit --audit-level=high
+
+  # The console's end-to-end suite gets its own job for the reason it exists: it
+  # is the only check that exercises a real browser against a real build, and it
+  # needs a browser download to do it. Folding it into the job above would make
+  # every console change pay that cost, and a failure would not say which kind of
+  # check broke.
+  admin-web-e2e:
+    name: admin-web (Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: admin-web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # `--with-deps` because the runner image is not guaranteed to carry the
+      # shared libraries a headless Chromium needs, and a missing one surfaces as
+      # every test failing to launch rather than as a clear setup error.
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Test
+        run: npm run test:e2e
+
+      # Traces and screenshots are the only artefacts worth keeping from a failed
+      # run: the report is reproducible, the evidence is not.
+      - name: Upload test artefacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-web-e2e-results
+          path: |
+            admin-web/test-results/
+            admin-web/playwright-report/
+          retention-days: 7
 
   mobile:
     name: mobile (Expo)

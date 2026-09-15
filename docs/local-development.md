@@ -94,7 +94,7 @@ replicas racing to advance the same cursor.
 | --- | --- | --- |
 | Types | `npm run typecheck` | The code agrees with its own types |
 | Lint | `npm run lint` | Type-aware rules: floating promises, untyped payloads, `no-misused-promises` |
-| Tests | `npm test` | Behaviour, 50 tests |
+| Tests | `npm test` | Behaviour, 52 tests |
 | Build | `npm run build` | The production build compiles |
 | Audit | `npm audit` | Clean |
 
@@ -126,6 +126,27 @@ bundle and there is exactly one place a future auth token will be attached.
 
 Pages fetch with `force-dynamic`, so `next build` succeeds with no backend
 running — which is also the state a reviewer opening a preview build is in.
+
+```bash
+npm run typecheck
+npm run lint
+npm test                           # response boundary + formatters, 29 tests
+npm run test:e2e                   # real browser over a production build, 43 tests
+```
+
+The console's tests are mostly about what it *refuses* to render: an amount
+arriving as a JSON number, an undeclared field, an unrecognised status, a pool
+snapshot without its staleness flag. Each must fail schema validation and surface
+as unavailable rather than as an empty table — a state the type layer cannot
+check, because the bad value arrives at runtime.
+
+`test:e2e` builds the console, serves it on port 3100, and starts a stub backend
+on 4010 for it to read (`e2e/stub-backend.mjs`). Two consequences worth knowing:
+it needs Chromium once (`npx playwright install --with-deps chromium`), and it
+tests the built artifact rather than `next dev`, because the build is what ships.
+The stub reads from `e2e/fixtures.mjs` and can be told to answer as a down,
+malformed or empty backend through `POST /__control`, which is how the suite
+proves a failed read and an empty result cannot look the same.
 
 ---
 
@@ -210,7 +231,7 @@ Four workflows, split by component so a failure names its own cause:
 | --- | --- |
 | `contracts.yml` | `fmt`, `clippy -D warnings`, `test`, Wasm build, artifact size, **export-table assertion** |
 | `backend.yml` | `prisma generate`, typecheck, lint, test, build, schema applies, `npm audit` |
-| `frontends.yml` | Both frontends: typecheck, lint, build (console) / test (mobile), audit |
+| `frontends.yml` | Both frontends: typecheck, lint, test, build (console), audit. Plus a separate job for the console's Playwright suite, with the browser installed via `--with-deps` |
 | `scripts.yml` | Contract build, typecheck, **full `--dry-run`** with a keypair generated per run |
 
 No key material is stored anywhere in CI, not even a generated testnet key: the

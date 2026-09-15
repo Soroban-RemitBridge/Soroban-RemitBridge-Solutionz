@@ -18,3 +18,5 @@ remit-interfaces = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+agent-registry = { workspace = true }
+compliance-hook = { workspace = true }

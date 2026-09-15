@@ -46,12 +46,10 @@ fn load_transfer(env: &Env, id: u64) -> Result<Transfer, EscrowError> {
 }
 
 /// Return held funds to an address and record the outcome.
-fn release(
-    env: &Env,
-    transfer: &mut Transfer,
-    to: &Address,
-    next_status: TransferStatus,
-) -> Result<(), EscrowError> {
+///
+/// Infallible by construction: the token transfer either happens or traps the
+/// whole invocation, so there is no partial state for the caller to handle.
+fn release(env: &Env, transfer: &mut Transfer, to: &Address, next_status: TransferStatus) {
     token::Client::new(env, &transfer.token).transfer(
         &env.current_contract_address(),
         to,
@@ -60,7 +58,6 @@ fn release(
     transfer.status = next_status;
     transfer.settled_at = env.ledger().timestamp();
     storage::set_transfer(env, transfer);
-    Ok(())
 }
 
 /// Ask the compliance gate whether this transfer may proceed.
@@ -83,15 +80,14 @@ fn check_compliance(
     );
     match outcome {
         Ok(Ok(true)) => Ok(()),
-        // `Ok(false)` is reserved by the gate for a future "needs manual review"
-        // state; treat it as a refusal rather than silently allowing it.
-        Ok(Ok(false)) => Err(EscrowError::ComplianceRefused),
-        // The gate replied, but the reply could not be decoded.
-        Ok(Err(_)) => Err(EscrowError::ComplianceCallFailed),
-        // The gate returned one of its typed refusals: a policy outcome.
-        Err(Ok(_)) => Err(EscrowError::ComplianceRefused),
-        // The invocation itself failed (budget, host error, bad address).
-        Err(Err(_)) => Err(EscrowError::ComplianceCallFailed),
+        // A policy outcome the sender can act on. `Ok(false)` is reserved by the
+        // gate for a future "needs manual review" state and is treated as a
+        // refusal rather than silently allowed; `Err(Ok(..))` is one of the
+        // gate's typed refusals.
+        Ok(Ok(false)) | Err(Ok(_)) => Err(EscrowError::ComplianceRefused),
+        // An incident: the reply could not be decoded, or the invocation never
+        // completed (bad address, budget exhausted, host error).
+        Ok(Err(_)) | Err(Err(_)) => Err(EscrowError::ComplianceCallFailed),
     }
 }
 
@@ -107,9 +103,8 @@ fn commit_volume(
         ComplianceHookClient::new(env, hook).try_commit_transfer(sender, &amount, corridor_id);
     match outcome {
         Ok(Ok(_)) => Ok(()),
-        Ok(Err(_)) => Err(EscrowError::ComplianceCallFailed),
         Err(Ok(_)) => Err(EscrowError::ComplianceRefused),
-        Err(Err(_)) => Err(EscrowError::ComplianceCallFailed),
+        Ok(Err(_)) | Err(Err(_)) => Err(EscrowError::ComplianceCallFailed),
     }
 }
 
@@ -363,7 +358,7 @@ impl EscrowInterface for RemitEscrow {
         // re-reads the transfer status immediately before releasing cash — the
         // same pattern as a card terminal re-authorising at the counter.
         let sender = transfer.sender.clone();
-        release(&env, &mut transfer, &sender, TransferStatus::Cancelled)?;
+        release(&env, &mut transfer, &sender, TransferStatus::Cancelled);
 
         let mut stats = storage::get_stats(&env);
         stats.cancelled = stats.cancelled.saturating_add(1);
@@ -484,7 +479,7 @@ impl EscrowInterface for RemitEscrow {
         // is the address recorded at creation, so a third party can only *help*,
         // never redirect.
         let sender = transfer.sender.clone();
-        release(&env, &mut transfer, &sender, TransferStatus::Refunded)?;
+        release(&env, &mut transfer, &sender, TransferStatus::Refunded);
 
         let mut stats = storage::get_stats(&env);
         stats.refunded = stats.refunded.saturating_add(1);

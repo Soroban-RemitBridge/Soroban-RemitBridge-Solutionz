@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
+import { asyncHandler } from '../api/middleware.js';
 import { env } from '../config/env.js';
 import { prisma } from '../db/client.js';
 import { validationFailed } from '../lib/errors.js';
@@ -16,7 +17,7 @@ const quoteSchema = z.object({
 export function quotingRouter(): Router {
   const router = Router();
 
-  router.post('/quotes', async (req: Request, res: Response) => {
+  router.post('/quotes', asyncHandler(async (req: Request, res: Response) => {
     const body = quoteSchema.safeParse(req.body);
     if (!body.success) throw validationFailed({ issues: body.error.issues });
 
@@ -24,7 +25,7 @@ export function quotingRouter(): Router {
     // 201 with a short-lived resource: the Location header points at the
     // verification endpoint, so a client that wants to double-check has one.
     res.status(201).location(`/quotes/${quote.quoteId}`).json(quote);
-  });
+  }));
 
   /**
    * Self-verification endpoint.
@@ -53,7 +54,7 @@ export function quotingRouter(): Router {
     });
   });
 
-  router.get('/quotes/:id', async (req: Request, res: Response) => {
+  router.get('/quotes/:id', asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id ?? '';
     const row = await prisma.quote.findUnique({ where: { id } });
     if (!row) {
@@ -65,10 +66,10 @@ export function quotingRouter(): Router {
       consumed: row.consumedByTransfer !== null,
       live: row.validUntil.getTime() > Date.now(),
     });
-  });
+  }));
 
   /** Corridor configuration, including the tier bands the sender app explains. */
-  router.get('/corridors', async (_req: Request, res: Response) => {
+  router.get('/corridors', asyncHandler(async (_req: Request, res: Response) => {
     const corridors = await prisma.corridor.findMany({ include: { region: true } });
     res.json({
       corridors: corridors.map((corridor) => ({
@@ -78,9 +79,9 @@ export function quotingRouter(): Router {
         dailyLimit: corridor.dailyLimit.toString(),
       })),
     });
-  });
+  }));
 
-  router.get('/corridors/:id/compliance-tiers', async (req: Request, res: Response) => {
+  router.get('/corridors/:id/compliance-tiers', asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id ?? '';
     const corridor = await prisma.corridor.findUnique({ where: { id } });
     if (!corridor) {
@@ -105,7 +106,7 @@ export function quotingRouter(): Router {
       dailyLimit: corridor.dailyLimit.toString(),
       spreadBps: corridor.spreadBps,
     });
-  });
+  }));
 
   return router;
 }

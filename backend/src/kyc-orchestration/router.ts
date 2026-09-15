@@ -1,12 +1,17 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
+import { asyncHandler } from '../api/middleware.js';
 import { env } from '../config/env.js';
 import { prisma } from '../db/client.js';
 import { notFound, unauthorized, validationFailed } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
-import { getProvider } from './service.js';
-import { expireStaleAttestations, revokeForSubject, submitVerification } from './service.js';
+import {
+  expireStaleAttestations,
+  getProvider,
+  revokeForSubject,
+  submitVerification,
+} from './service.js';
 
 const documentSchema = z.object({
   type: z.enum(['passport', 'national_id', 'drivers_license']),
@@ -52,7 +57,7 @@ export function kycRouter(): Router {
    * entered a passport number, and so the answer comes from the same tier logic
    * the submission path uses rather than a client-side copy of it.
    */
-  router.post('/kyc/preflight', async (req: Request, res: Response) => {
+  router.post('/kyc/preflight', asyncHandler(async (req: Request, res: Response) => {
     const body = submitSchema.pick({ corridorId: true, amount: true }).safeParse(req.body);
     if (!body.success) throw validationFailed({ issues: body.error.issues });
 
@@ -77,10 +82,10 @@ export function kycRouter(): Router {
         dailyLimit: corridor.dailyLimit.toString(),
       },
     });
-  });
+  }));
 
   /** Submit a verification. Returns the outcome; publishing happens inside. */
-  router.post('/kyc/verifications', async (req: Request, res: Response) => {
+  router.post('/kyc/verifications', asyncHandler(async (req: Request, res: Response) => {
     const body = submitSchema.safeParse(req.body);
     if (!body.success) throw validationFailed({ issues: body.error.issues });
 
@@ -94,12 +99,27 @@ export function kycRouter(): Router {
       dateOfBirth: body.data.dateOfBirth,
       countryCode: body.data.countryCode,
       ...(body.data.document ? { document: body.data.document } : {}),
-      ...(body.data.address ? { address: body.data.address } : {}),
+      ...(body.data.address
+        ? {
+            address: {
+              line1: body.data.address.line1,
+              city: body.data.address.city,
+              countryCode: body.data.address.countryCode,
+              // `exactOptionalPropertyTypes` is on, so an explicit `undefined` is
+              // not the same as an absent key. Spreading the parsed object
+              // straight through would fail to typecheck, and silently dropping
+              // the field would lose data a provider may require.
+              ...(body.data.address.postalCode !== undefined
+                ? { postalCode: body.data.address.postalCode }
+                : {}),
+            },
+          }
+        : {}),
       ...(body.data.sourceOfFunds ? { sourceOfFunds: body.data.sourceOfFunds } : {}),
     });
 
     res.status(output.outcome === 'APPROVED' ? 201 : 202).json(output);
-  });
+  }));
 
   /**
    * Provider webhook.
@@ -108,7 +128,7 @@ export function kycRouter(): Router {
    * mounted with `express.text()` rather than the JSON parser — a parsed-then-
    * reserialised body has different bytes and would fail every signature check.
    */
-  router.post('/kyc/webhooks/:providerId', async (req: Request, res: Response) => {
+  router.post('/kyc/webhooks/:providerId', asyncHandler(async (req: Request, res: Response) => {
     const providerId = req.params.providerId ?? '';
     const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
 
@@ -143,10 +163,10 @@ export function kycRouter(): Router {
     });
 
     res.json({ accepted: true, matched: true, outcome: event.outcome });
-  });
+  }));
 
   /** Operator: revoke every attestation belonging to a subject. */
-  router.post('/kyc/revocations', async (req: Request, res: Response) => {
+  router.post('/kyc/revocations', asyncHandler(async (req: Request, res: Response) => {
     const body = z
       .object({ subjectAddress: z.string().startsWith('G'), reason: z.string().min(2).max(64) })
       .safeParse(req.body);
@@ -154,10 +174,10 @@ export function kycRouter(): Router {
 
     const result = await revokeForSubject(body.data.subjectAddress, body.data.reason);
     res.json(result);
-  });
+  }));
 
   /** Operator: the compliance-monitoring feed. */
-  router.get('/kyc/attestations', async (req: Request, res: Response) => {
+  router.get('/kyc/attestations', asyncHandler(async (req: Request, res: Response) => {
     const query = z
       .object({
         status: z.enum(['PENDING', 'ACTIVE', 'EXPIRED', 'REVOKED']).optional(),
@@ -191,7 +211,7 @@ export function kycRouter(): Router {
     });
 
     res.json({ attestations: rows, expiresSweepable: await expireStaleAttestations() });
-  });
+  }));
 
   router.get('/kyc/config', (_req: Request, res: Response) => {
     const provider = getProvider();

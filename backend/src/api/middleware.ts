@@ -1,10 +1,28 @@
 import { randomUUID } from 'node:crypto';
 
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { ZodError } from 'zod';
 
 import { AppError, isAppError, validationFailed } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
+
+/**
+ * Wrap an async route handler so a rejection reaches `errorHandler`.
+ *
+ * Express 4 forwards only errors thrown *synchronously* from a handler. A
+ * rejected promise from an `async` handler is not caught at all: the request
+ * hangs until the client gives up, and the failure never reaches the logger. It
+ * is also the most likely place for an error message containing a customer name
+ * to escape unhandled. Every async handler in this service is registered through
+ * here, which is why the lint rule that flags a bare async handler is on.
+ */
+export function asyncHandler(
+  handler: (req: Request, res: Response, next: NextFunction) => Promise<void>,
+): RequestHandler {
+  return (req, res, next) => {
+    handler(req, res, next).catch(next);
+  };
+}
 
 /** Attach a correlation id so a log line can be tied back to a client report. */
 export function requestContext(req: Request, res: Response, next: NextFunction): void {

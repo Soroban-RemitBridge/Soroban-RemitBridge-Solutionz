@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
+import { asyncHandler } from '../api/middleware.js';
 import { notFound, validationFailed } from '../lib/errors.js';
 import { toStroops } from '../lib/money.js';
 import { prisma } from '../db/client.js';
@@ -29,7 +30,7 @@ export function agentLiquidityRouter(): Router {
   const router = Router();
 
   /** Agent detail: the view the operator dashboard and the agent app both use. */
-  router.get('/agents/:id', async (req: Request, res: Response) => {
+  router.get('/agents/:id', asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id ?? '';
     const agent = await prisma.agent.findUnique({
       where: { id },
@@ -51,9 +52,9 @@ export function agentLiquidityRouter(): Router {
       collateralRatioBps: 15_000,
       requiredBond: ((drawn * 15_000n) / 10_000n).toString(),
     });
-  });
+  }));
 
-  router.get('/agents', async (req: Request, res: Response) => {
+  router.get('/agents', asyncHandler(async (req: Request, res: Response) => {
     const query = z
       .object({
         regionId: z.string().optional(),
@@ -74,18 +75,18 @@ export function agentLiquidityRouter(): Router {
     });
 
     res.json({ agents });
-  });
+  }));
 
   /** Run one monitoring sweep; used by cron and by the dashboard's refresh. */
-  router.post('/agents/liquidity/sweep', async (req: Request, res: Response) => {
+  router.post('/agents/liquidity/sweep', asyncHandler(async (req: Request, res: Response) => {
     const body = z.object({ regionId: z.string().min(2).max(12) }).safeParse(req.body);
     if (!body.success) throw validationFailed({ issues: body.error.issues });
 
     const result = await sweepRegion(body.data.regionId);
     res.json(result);
-  });
+  }));
 
-  router.get('/agents/liquidity/alerts', async (req: Request, res: Response) => {
+  router.get('/agents/liquidity/alerts', asyncHandler(async (req: Request, res: Response) => {
     const query = z
       .object({
         status: z.enum(['OPEN', 'ACKNOWLEDGED', 'RESOLVED']).default('OPEN'),
@@ -102,9 +103,9 @@ export function agentLiquidityRouter(): Router {
     });
 
     res.json({ alerts });
-  });
+  }));
 
-  router.post('/agents/liquidity/top-ups', async (req: Request, res: Response) => {
+  router.post('/agents/liquidity/top-ups', asyncHandler(async (req: Request, res: Response) => {
     const body = proposeSchema.safeParse(req.body);
     if (!body.success) throw validationFailed({ issues: body.error.issues });
 
@@ -116,9 +117,9 @@ export function agentLiquidityRouter(): Router {
       requestedBy: body.data.requestedBy,
     });
     res.status(201).json(request);
-  });
+  }));
 
-  router.get('/agents/liquidity/top-ups', async (req: Request, res: Response) => {
+  router.get('/agents/liquidity/top-ups', asyncHandler(async (req: Request, res: Response) => {
     const query = z
       .object({
         status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'EXECUTED', 'FAILED']).optional(),
@@ -134,7 +135,7 @@ export function agentLiquidityRouter(): Router {
       include: { agent: { select: { id: true, tradingName: true, legalName: true } } },
     });
     res.json({ requests });
-  });
+  }));
 
   /**
    * Approve or reject a request.
@@ -143,7 +144,7 @@ export function agentLiquidityRouter(): Router {
    * machine acts, and the audit trail shows both. Collapsing them would let an
    * automated sweep move float without anyone having approved it.
    */
-  router.post('/agents/liquidity/top-ups/:id/decision', async (req: Request, res: Response) => {
+  router.post('/agents/liquidity/top-ups/:id/decision', asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id ?? '';
     const body = decisionSchema.safeParse(req.body);
     if (!body.success) throw validationFailed({ issues: body.error.issues });
@@ -155,16 +156,16 @@ export function agentLiquidityRouter(): Router {
       ...(body.data.note ? { note: body.data.note } : {}),
     });
     res.json(updated);
-  });
+  }));
 
-  router.post('/agents/liquidity/top-ups/:id/execute', async (req: Request, res: Response) => {
+  router.post('/agents/liquidity/top-ups/:id/execute', asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id ?? '';
     const result = await executeTopUp(id);
     res.json(result);
-  });
+  }));
 
   /** Region float overview for the pool-health panel. */
-  router.get('/liquidity/regions/:regionId', async (req: Request, res: Response) => {
+  router.get('/liquidity/regions/:regionId', asyncHandler(async (req: Request, res: Response) => {
     const regionId = req.params.regionId ?? '';
     const [region, latest, exposure] = await Promise.all([
       prisma.region.findUnique({ where: { id: regionId } }),
@@ -190,7 +191,7 @@ export function agentLiquidityRouter(): Router {
       },
       agentExposureTotal: exposure._sum.drawnAmount?.toString() ?? '0',
     });
-  });
+  }));
 
   return router;
 }

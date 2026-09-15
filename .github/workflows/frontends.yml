@@ -79,9 +79,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The pure modules only: the claim-code protocol and money formatting. Both
+      # run in Node under vitest with `expo-crypto` aliased to a `node:crypto`
+      # double, so this needs no simulator and no native build.
+      - name: Test
+        run: npm test
+
       # Deliberately no `expo export` here. Producing a real artifact needs EAS
       # (or a full native toolchain), and a hosted preview build is the artefact
-      # worth reviewing — see the README. Typecheck and lint are what CI can
-      # verify honestly on every push; claiming more would be noise.
+      # worth reviewing — see the README.
       - name: Audit
         run: npm audit --audit-level=critical

@@ -18,3 +18,6 @@ remit-interfaces = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+# Test-only: the pool's suite deploys the real registry so bond sufficiency is
+# checked against real bonded collateral rather than a stub.
+agent-registry = { workspace = true }

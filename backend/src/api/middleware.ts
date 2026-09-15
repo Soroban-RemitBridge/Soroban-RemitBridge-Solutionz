@@ -34,6 +34,48 @@ export function requestContext(req: Request, res: Response, next: NextFunction):
 }
 
 /**
+ * A `body-parser` rejection: malformed JSON, an oversized payload, a bad charset.
+ *
+ * These carry a 4xx `status` and a machine-readable `type`, and they are the
+ * client's fault. Before this was handled they fell through to the generic
+ * handler and were reported as 500s, which is wrong twice over: it tells the
+ * client to retry something that will never succeed, and it buries real
+ * server-side faults in a stream of client-input noise.
+ */
+interface BodyParserError {
+  status: number;
+  type: string;
+}
+
+function asBodyParserError(error: unknown): BodyParserError | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const candidate = error as { status?: unknown; statusCode?: unknown; type?: unknown };
+  const status =
+    typeof candidate.status === 'number'
+      ? candidate.status
+      : typeof candidate.statusCode === 'number'
+        ? candidate.statusCode
+        : null;
+
+  if (status === null || status < 400 || status >= 500) return null;
+  return { status, type: typeof candidate.type === 'string' ? candidate.type : 'request.rejected' };
+}
+
+/** Client-safe wording, chosen by status rather than echoed from the error. */
+function bodyErrorMessage(status: number): { code: string; message: string } {
+  if (status === 413) {
+    return { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large.' };
+  }
+  if (status === 415) {
+    return { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Unsupported content type.' };
+  }
+  if (status === 400) {
+    return { code: 'MALFORMED_BODY', message: 'Request body could not be parsed.' };
+  }
+  return { code: 'REQUEST_REJECTED', message: 'Request was rejected.' };
+}
+
+/**
  * Error handler.
  *
  * Internal errors return an opaque body. A stack trace from a service that holds
@@ -60,6 +102,18 @@ export function errorHandler(
   if (error instanceof ZodError) {
     const appError = validationFailed({ issues: error.issues });
     res.status(appError.status).json({ error: { code: appError.code, message: appError.message, details: appError.details, requestId } });
+    return;
+  }
+
+  const bodyError = asBodyParserError(error);
+  if (bodyError !== null) {
+    // The parser's own message is not forwarded: for a JSON syntax error it
+    // quotes the offending body, and a body in this service can be a document
+    // number or a name. The `type` goes to the log, where it is useful and not
+    // publicly readable.
+    const { code, message } = bodyErrorMessage(bodyError.status);
+    logger.warn({ requestId, type: bodyError.type, status: bodyError.status }, 'rejected request body');
+    res.status(bodyError.status).json({ error: { code, message, requestId } });
     return;
   }
 

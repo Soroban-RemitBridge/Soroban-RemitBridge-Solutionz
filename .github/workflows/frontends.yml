@@ -1,0 +1,87 @@
+name: frontends
+
+# The two frontends share a stack and a quality bar, so they share a workflow.
+# Both are checked with the same three steps, in the same order, for the same
+# reason: a type error is a defect, a lint error is a defect, and a build failure
+# is the one users would actually see.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'admin-web/**'
+      - 'mobile/**'
+      - '.github/workflows/frontends.yml'
+  pull_request:
+    paths:
+      - 'admin-web/**'
+      - 'mobile/**'
+      - '.github/workflows/frontends.yml'
+  workflow_dispatch:
+
+jobs:
+  admin-web:
+    name: admin-web (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: admin-web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # `next build` renders every route. The pages fetch with
+      # `force-dynamic`, so a build must succeed with no backend reachable —
+      # which is also the state a reviewer opening the Vercel preview will be in.
+      - name: Build
+        run: npm run build
+        env:
+          REMITBRIDGE_API_URL: http://127.0.0.1:4000
+
+      - name: Audit
+        run: npm audit --audit-level=high
+
+  mobile:
+    name: mobile (Expo)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Deliberately no `expo export` here. Producing a real artifact needs EAS
+      # (or a full native toolchain), and a hosted preview build is the artefact
+      # worth reviewing — see the README. Typecheck and lint are what CI can
+      # verify honestly on every push; claiming more would be noise.
+      - name: Audit
+        run: npm audit --audit-level=critical

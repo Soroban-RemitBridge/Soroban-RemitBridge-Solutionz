@@ -1,0 +1,143 @@
+name: contracts
+
+# The contracts hold funds and enforce compliance. `clippy -D warnings` is not
+# style policing here: the lints that matter in a `no_std` contract are the ones
+# about integer arithmetic and unused results, and both are the shape a
+# fund-handling bug takes.
+#
+# The Wasm build is a separate job from the tests because deployment cost on
+# Soroban is a function of Wasm size, and a change that doubles it should fail
+# visibly rather than being noticed on the invoice.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts.yml'
+  pull_request:
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: fmt, clippy, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      # `--all-targets` so the tests are linted too. A test that unwraps a
+      # fallible call is fine; a test that silently swallows one is not, and it
+      # is the test suite people trust when judging the contract.
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --all-features
+
+  wasm:
+    name: wasm release build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+
+      - name: Build
+        run: >
+          cargo build --release --target wasm32-unknown-unknown
+          -p agent-registry
+          -p compliance-hook
+          -p remit-escrow
+          -p liquidity-pool
+
+      - name: Report artifact sizes
+        run: |
+          echo "| contract | bytes |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          for artifact in target/wasm32-unknown-unknown/release/*.wasm; do
+            printf '| %s | %s |\n' "$(basename "$artifact")" "$(wc -c < "$artifact" | tr -d ' ')" >> "$GITHUB_STEP_SUMMARY"
+          done
+          cat target/wasm32-unknown-unknown/release/*.wasm | wc -c
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contracts-wasm
+          path: contracts/target/wasm32-unknown-unknown/release/*.wasm
+          retention-days: 14
+
+      # A contract that exports another contract's ABI cannot be deployed: the
+      # Wasm entry points collide, and the failure appears at deploy time rather
+      # than at build time. This caught exactly that when the workspace still
+      # linked the contract crates together.
+      - name: Assert each artifact exports only its own entry points
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const { readFileSync, readdirSync } = require('node:fs');
+
+          const dir = 'target/wasm32-unknown-unknown/release';
+          const expected = {
+            'agent_registry.wasm': ['register_agent', 'authorize_agent', 'is_authorized'],
+            'compliance_hook.wasm': ['check_transfer_allowed', 'set_tier_thresholds'],
+            'remit_escrow.wasm': ['create_transfer', 'claim_transfer', 'refund_expired'],
+            'liquidity_pool.wasm': ['deposit_liquidity', 'draw_liquidity', 'get_pool_health'],
+          };
+
+          let failed = false;
+          for (const [file, names] of Object.entries(expected)) {
+            const bytes = readFileSync(`${dir}/${file}`);
+            const wasm = new WebAssembly.Module(bytes);
+            const exports = WebAssembly.Module.exports(wasm).map((e) => e.name);
+
+            for (const name of names) {
+              if (!exports.includes(name)) {
+                console.error(`${file} does not export ${name}`);
+                failed = true;
+              }
+            }
+
+            // Cross-contract ABI leakage: an artifact should not export another
+            // contract's entry points.
+            for (const [otherFile, otherNames] of Object.entries(expected)) {
+              if (otherFile === file) continue;
+              const leaked = otherNames.filter((name) => exports.includes(name));
+              if (leaked.length > 0) {
+                console.error(`${file} exports ${otherFile}'s entry points: ${leaked.join(', ')}`);
+                failed = true;
+              }
+            }
+          }
+
+          if (failed) process.exit(1);
+          console.log('each artifact exports exactly its own entry points');
+          NODE

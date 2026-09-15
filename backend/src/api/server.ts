@@ -25,18 +25,30 @@ export function createServer(): Express {
   app.use(timeout(30_000));
 
   /**
-   * Webhooks are mounted *before* the JSON body parser, with their own raw
-   * parser. Signature verification runs over the exact bytes the provider sent; a
-   * body that has been parsed and reserialised has different bytes and would fail
+   * Webhooks get their own raw body parser, and the scope is the *route*, not the
+   * `/api/v1` prefix.
+   *
+   * Signature verification runs over the exact bytes the provider sent; a body
+   * that has been parsed and reserialised has different bytes and would fail
    * every check, which presents as a provider outage rather than a middleware
    * ordering bug.
+   *
+   * Mounting this on the whole `/api/v1` prefix is the obvious mistake and a
+   * expensive one: `express.text` marks the body as consumed, so the JSON parser
+   * below silently skips, and every POST in the service receives a *string*
+   * where it expects an object. The symptom is a validation error reading
+   * "Expected object, received string" on routes that have nothing to do with
+   * webhooks.
    */
-  app.use('/api/v1', express.text({ type: 'application/json', limit: '1mb' }), kycRouter());
+  app.use(
+    '/api/v1/kyc/webhooks/:providerId',
+    express.text({ type: 'application/json', limit: '1mb' }),
+  );
 
   app.use(express.json({ limit: '1mb' }));
 
   app.use('/api/v1', rateLimit({ windowMs: 60_000, max: 300 }));
-  app.use('/api/v1', transfersRouter(), quotingRouter(), agentLiquidityRouter());
+  app.use('/api/v1', kycRouter(), transfersRouter(), quotingRouter(), agentLiquidityRouter());
 
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 

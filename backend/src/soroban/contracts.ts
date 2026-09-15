@@ -24,6 +24,28 @@ const bool = (value: boolean): xdr.ScVal => nativeToScVal(value, { type: 'bool' 
 const vec = (values: xdr.ScVal[]): xdr.ScVal =>
   xdr.ScVal.scvVec(values);
 
+/**
+ * Encode a `#[contracttype]` struct as a Soroban map.
+ *
+ * Two things have to be right here and `nativeToScVal`'s defaults get both of
+ * them wrong for a contract type: the map's keys must be **symbols** (the Rust
+ * field names), and each value must be encoded as its *declared* Rust type. A
+ * plain object passed with a scalar `type` hint produces string keys and picks
+ * the narrowest integer representation that happens to fit, which the host then
+ * rejects with a decoding error naming neither the field nor the caller.
+ *
+ * Building the map explicitly is the only encoding that cannot drift from the
+ * Rust definition. Keys must match the Rust field names exactly (`tier1_max`,
+ * not `tier1Max`), and entries are sorted because the Soroban runtime expects
+ * map keys in order.
+ */
+function struct(fields: Record<string, xdr.ScVal>): xdr.ScVal {
+  const entries = Object.entries(fields)
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([key, value]) => new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol(key), val: value }));
+  return xdr.ScVal.scvMap(entries);
+}
+
 export const contracts = {
   escrow: env.CONTRACT_ESCROW,
   agentRegistry: env.CONTRACT_AGENT_REGISTRY,
@@ -99,15 +121,12 @@ export function setTierThresholds(
     method: 'set_tier_thresholds',
     signer: operator,
     args: [
-      nativeToScVal(
-        {
-          corridor_id: thresholds.corridorId,
-          tier1_max: thresholds.tier1Max,
-          tier2_max: thresholds.tier2Max,
-          daily_limit: thresholds.dailyLimit,
-        },
-        { type: 'map' },
-      ),
+      struct({
+        corridor_id: sym(thresholds.corridorId),
+        tier1_max: i128(thresholds.tier1Max),
+        tier2_max: i128(thresholds.tier2Max),
+        daily_limit: i128(thresholds.dailyLimit),
+      }),
     ],
   });
 }

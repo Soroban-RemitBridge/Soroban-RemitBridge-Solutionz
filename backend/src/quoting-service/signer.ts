@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import { Keypair } from '@stellar/stellar-sdk';
+import { type Keypair } from '@stellar/stellar-sdk';
 
 import { canonicalize, type JsonValue } from '../kyc-orchestration/provider.js';
 
@@ -65,7 +65,7 @@ export function verifyQuote(quote: SignedQuote, secret: string, expectedKey?: st
   void signingKey;
 
   const expected = createHmac('sha256', secret)
-    .update(canonicalize(body as unknown as JsonValue), 'utf8')
+    .update(canonicalize(body), 'utf8')
     .digest('hex');
 
   const providedBuffer = Buffer.from(signature, 'utf8');

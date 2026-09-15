@@ -1,4 +1,4 @@
-import { Address, Keypair, nativeToScVal, xdr } from '@stellar/stellar-sdk';
+import { Address, type Keypair, nativeToScVal, xdr } from '@stellar/stellar-sdk';
 
 import { env } from '../config/env.js';
 import { invoke, read, type InvocationResult } from './rpc.js';

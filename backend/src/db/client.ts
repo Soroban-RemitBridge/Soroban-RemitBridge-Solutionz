@@ -16,7 +16,8 @@ import { env, isProduction } from '../config/env.js';
  * looks like a database outage rather than a dev-server quirk.
  */
 declare global {
-  // eslint-disable-next-line no-var
+  // `var` is required here: a `declare global` block cannot introduce a
+  // `const`/`let` binding, and this is the binding Prisma's own docs prescribe.
   var __remitbridgePrisma: PrismaClient | undefined;
 }
 

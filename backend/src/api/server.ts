@@ -1,5 +1,5 @@
 import express, { type Express } from 'express';
-import pinoHttp from 'pino-http';
+import { pinoHttp } from 'pino-http';
 
 import { agentLiquidityRouter } from '../agent-liquidity/router.js';
 import { env } from '../config/env.js';

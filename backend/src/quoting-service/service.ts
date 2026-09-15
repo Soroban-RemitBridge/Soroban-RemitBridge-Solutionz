@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Keypair } from '@stellar/stellar-sdk';
+import { type Keypair } from '@stellar/stellar-sdk';
 
 import { env } from '../config/env.js';
 import { prisma } from '../db/client.js';

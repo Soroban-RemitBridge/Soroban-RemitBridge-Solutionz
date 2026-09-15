@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 
+import { asyncHandler } from '../api/middleware.js';
 import { prisma } from '../db/client.js';
 import { notFound, validationFailed } from '../lib/errors.js';
 import { fromStroops, toStroops } from '../lib/money.js';
@@ -25,7 +26,7 @@ const listQuerySchema = z.object({
 export function transfersRouter(): Router {
   const router = Router();
 
-  router.get('/transfers', async (req: Request, res: Response) => {
+  router.get('/transfers', asyncHandler(async (req: Request, res: Response) => {
     const query = listQuerySchema.safeParse(req.query);
     if (!query.success) throw validationFailed({ issues: query.error.issues });
 
@@ -52,9 +53,9 @@ export function transfersRouter(): Router {
       // caught up yet". Without it, a lagging indexer looks like a lost transfer.
       indexer: { lastLedger: cursor?.lastLedger ?? null, updatedAt: cursor?.updatedAt ?? null },
     });
-  });
+  }));
 
-  router.get('/transfers/:id/status', async (req: Request, res: Response) => {
+  router.get('/transfers/:id/status', asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id ?? '';
     if (!/^\d+$/.test(id)) throw validationFailed({ id: 'expected a numeric transfer id' });
 
@@ -85,9 +86,9 @@ export function transfersRouter(): Router {
         occurredAt: event.occurredAt,
       })),
     });
-  });
+  }));
 
-  router.get('/transfers/:id/receipt', async (req: Request, res: Response) => {
+  router.get('/transfers/:id/receipt', asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id ?? '';
     if (!/^\d+$/.test(id)) throw validationFailed({ id: 'expected a numeric transfer id' });
 
@@ -113,10 +114,10 @@ export function transfersRouter(): Router {
       claimHash: transfer.claimHash,
       settleTxHash: transfer.settleTxHash,
     });
-  });
+  }));
 
   /** Taker-side helper: what would this amount cost, before creating anything. */
-  router.post('/transfers/preflight', async (req: Request, res: Response) => {
+  router.post('/transfers/preflight', asyncHandler(async (req: Request, res: Response) => {
     const body = z
       .object({
         corridorId: z.string().min(2).max(12),
@@ -139,16 +140,21 @@ export function transfersRouter(): Router {
       withinDailyLimit: amount <= BigInt(corridor.dailyLimit.toString()),
       active: corridor.active,
     });
-  });
+  }));
 
   return router;
 }
 
+/** Anything with a meaningful `toString` — Prisma's `Decimal` qualifies. */
+interface Stringifiable {
+  toString(): string;
+}
+
 interface SerialisableTransfer {
   id: bigint;
-  amount: unknown;
-  fee?: unknown;
-  payout?: unknown;
+  amount: Stringifiable;
+  fee?: Stringifiable;
+  payout?: Stringifiable;
   status: string;
   expiry: Date;
   createdAt: Date;
@@ -167,8 +173,8 @@ function serialiseTransfer(transfer: SerialisableTransfer): Record<string, unkno
   return {
     ...transfer,
     id: transfer.id.toString(),
-    amount: transfer.amount === undefined ? undefined : String(transfer.amount),
-    fee: transfer.fee === undefined ? undefined : String(transfer.fee),
-    payout: transfer.payout === undefined ? undefined : String(transfer.payout),
+    amount: transfer.amount === undefined ? undefined : transfer.amount.toString(),
+    fee: transfer.fee === undefined ? undefined : transfer.fee.toString(),
+    payout: transfer.payout === undefined ? undefined : transfer.payout.toString(),
   };
 }

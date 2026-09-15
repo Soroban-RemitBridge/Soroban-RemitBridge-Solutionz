@@ -1,6 +1,6 @@
 import { scValToNative, xdr } from '@stellar/stellar-sdk';
 
-import { EVENT_TOPICS, type EventTopic } from '../config/constants.js';
+import { EVENT_TOPICS } from '../config/constants.js';
 
 /**
  * Event decoding.
@@ -216,7 +216,7 @@ function asTuple(value: unknown, expectedLength: number, event: RawContractEvent
   }
   if (value.length < expectedLength) {
     throw new UndecodableEventError(
-      `event payload has ${value.length} fields, expected at least ${expectedLength}`,
+      `expected at least ${expectedLength} fields in the event payload, got ${value.length}`,
       event,
       'payload',
     );

@@ -50,8 +50,20 @@ export function applyBps(amount: bigint, bps: number): bigint {
   return (amount * BigInt(bps)) / 10_000n;
 }
 
+/**
+ * Ceiling for a basis-point multiplier.
+ *
+ * `fee_for` in the escrow only ever sees 0–10 000 (0–100%), but the same helper
+ * expresses the pool's collateral ratio, which is legitimately above 100%: a
+ * 150% over-collateralisation requirement is 15 000 bps, and that exact value
+ * appears in the liquidity service. The ceiling is therefore set well above any
+ * ratio the network would configure, so it catches a unit mix-up — a percentage
+ * where basis points were meant — rather than a legitimate configuration.
+ */
+export const MAX_BPS = 100_000;
+
 export function assertSafeBps(bps: number): void {
-  if (!Number.isInteger(bps) || bps < 0 || bps > 10_000) {
+  if (!Number.isInteger(bps) || bps < 0 || bps > MAX_BPS) {
     throw new Error(`Basis points out of range: ${bps}`);
   }
 }

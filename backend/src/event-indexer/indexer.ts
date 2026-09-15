@@ -1,4 +1,5 @@
-import { xdr } from '@stellar/stellar-sdk';
+import { type Prisma } from '@prisma/client';
+import { type xdr } from '@stellar/stellar-sdk';
 
 import { env } from '../config/env.js';
 import { prisma } from '../db/client.js';
@@ -170,7 +171,7 @@ async function persist(raw: RawContractEvent, decoded: DecodedEvent): Promise<bo
       ledger: raw.ledger,
       eventIndex: raw.eventIndex,
       txHash: raw.txHash,
-      payload: decoded.payload as object,
+      payload: asJson(decoded.payload),
       rawXdr: env.INDEXER_STORE_RAW_XDR ? JSON.stringify({ topic: raw.topicXdr, value: raw.valueXdr }) : null,
       transferId: decoded.transferId,
       occurredAt: new Date(raw.closedAt),
@@ -272,8 +273,8 @@ async function projectTransferSettled(
       ...(status === 'CLAIMED' && claimedBy ? { claimedBy } : {}),
       ...(status === 'CLAIMED'
         ? {
-            fee: String(decoded.payload['fee'] ?? '0'),
-            payout: String(decoded.payload['payout'] ?? '0'),
+            fee: payloadAmount(decoded.payload['fee']),
+            payout: payloadAmount(decoded.payload['payout']),
           }
         : {}),
     },
@@ -294,7 +295,7 @@ async function projectAgentStatus(_raw: RawContractEvent, decoded: DecodedEvent)
   if (!agentAddress) return false;
 
   const payload = decoded.payload['value'];
-  const to = Array.isArray(payload) ? payload[1] : undefined;
+  const to: unknown = Array.isArray(payload) ? (payload as unknown[])[1] : undefined;
   const statusMap: Record<string, 'PENDING' | 'AUTHORIZED' | 'SUSPENDED' | 'REVOKED'> = {
     Pending: 'PENDING',
     Authorized: 'AUTHORIZED',
@@ -327,13 +328,40 @@ async function projectPoolDraw(decoded: DecodedEvent): Promise<boolean> {
 
   await prisma.agentExposure.upsert({
     where: { agentId_regionId: { agentId: agent.id, regionId } },
-    create: { agentId: agent.id, regionId, drawnAmount: String(decoded.payload['exposure']) },
+    create: { agentId: agent.id, regionId, drawnAmount: payloadAmount(decoded.payload['exposure']) },
     // Absolute, not incremented: the event carries the agent's resulting exposure,
     // so a replayed event converges on the same value instead of double-counting.
-    update: { drawnAmount: String(decoded.payload['exposure']) },
+    update: { drawnAmount: payloadAmount(decoded.payload['exposure']) },
   });
 
   return true;
+}
+
+/**
+ * Widen a decoded payload to Prisma's JSON input type.
+ *
+ * The decoder only emits JSON-safe values — strings, numbers, booleans, `null`,
+ * arrays and plain objects, with every `bigint` already stringified — but that
+ * is a runtime guarantee the type system cannot see through
+ * `Record<string, unknown>`. The cast is unavoidable; it is confined to one
+ * function, with the guarantee named, rather than scattered at each write.
+ */
+function asJson(payload: Record<string, unknown>): Prisma.InputJsonValue {
+  return payload as Prisma.InputJsonValue;
+}
+
+/**
+ * Read an amount out of a decoded payload as a string.
+ *
+ * The decoder already normalises `bigint`s to strings, so a value that is not a
+ * string here is a decoding bug — and `String(unknown)` would turn it into
+ * `"[object Object]"`, a plausible-looking amount in a reconciliation record.
+ * Failing loudly is the only safe option.
+ */
+function payloadAmount(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'bigint') return value.toString();
+  throw new Error(`expected a decimal string in the event payload, got ${typeof value}`);
 }
 
 /** Long-running loop used by `npm run indexer`. */

@@ -33,10 +33,41 @@ import {
  * Determinism matters more than realism here: a flaky mock produces a flaky CI,
  * and the first thing anyone does with a flaky test is delete it.
  */
+/*
+ * `require-await` is off for this file only.
+ *
+ * The provider implements an interface whose every method returns a `Promise` —
+ * because a real provider calls a network — while the mock deliberately does
+ * none of that work. Marking it `async` without an `await` is the honest way to
+ * satisfy the contract; `fetchResult` throws rather than resolving, so it has
+ * nothing to await either. Silencing the rule here is narrower than weakening it
+ * for the whole service, where an accidentally-async method is worth catching.
+ */
+/* eslint-disable @typescript-eslint/require-await */
+
+export interface MockProviderOptions {
+  /**
+   * Secret used to verify webhook signatures. Defaults to
+   * `KYC_PROVIDER_WEBHOOK_SECRET` from the parsed environment.
+   *
+   * Injected rather than read from `process.env` at call time so that the secret
+   * is resolved once, at boot, like every other configuration value. A webhook
+   * verifier that consulted the environment on every request would be the one
+   * piece of configuration in this service that is *not* fail-fast.
+   */
+  webhookSecret?: string;
+}
+
 export class MockIdVerificationProvider implements IdVerificationProvider {
   readonly id = 'mock';
   readonly supportedTiers: readonly ProviderTier[] = ['None', 'Standard', 'Enhanced'];
   readonly supportsEnhancedDueDiligence = true;
+
+  readonly #webhookSecret: string | undefined;
+
+  constructor(options: MockProviderOptions = {}) {
+    this.#webhookSecret = options.webhookSecret ?? env.KYC_PROVIDER_WEBHOOK_SECRET;
+  }
 
   async submit(request: VerificationRequest): Promise<VerificationResult> {
     const normalizedName = request.fullName.toLowerCase();
@@ -126,7 +157,7 @@ export class MockIdVerificationProvider implements IdVerificationProvider {
     headers: Record<string, string | undefined>,
     rawBody: string,
   ): boolean {
-    const secret = env.KYC_PROVIDER_WEBHOOK_SECRET;
+    const secret = this.#webhookSecret;
     if (!secret) {
       // Refusing is the only safe default. Accepting unsigned webhooks in
       // development is how an unsigned-webhook assumption reaches production.
@@ -159,7 +190,7 @@ export class MockIdVerificationProvider implements IdVerificationProvider {
       outcome: (parsed.outcome ?? 'PENDING') as WebhookEvent['outcome'],
       reasons: parsed.reasons ?? [],
       occurredAt: parsed.occurredAt ?? new Date().toISOString(),
-      raw: parsed as unknown as JsonObject,
+      raw: parsed,
     };
   }
 }

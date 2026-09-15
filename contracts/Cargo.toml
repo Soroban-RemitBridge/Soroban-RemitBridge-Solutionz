@@ -23,6 +23,11 @@ soroban-sdk = "22.0.1"
 # Contracts depend on the interface crate, never on each other: see the crate
 # docs in `interfaces/src/lib.rs` for why that distinction is load-bearing.
 remit-interfaces = { path = "interfaces" }
+# Test-only: the escrow's suite deploys the real registry and compliance hook so
+# cross-contract behaviour is exercised end to end rather than mocked. These are
+# `dev-dependencies`, so they are never linked into a contract's Wasm.
+agent-registry = { path = "agent-registry" }
+compliance-hook = { path = "compliance-hook" }
 
 # Soroban contracts are deployed as Wasm and charged per byte of code size, so
 # optimise for size (`opt-level = "z"`) while keeping `overflow-checks` on: an

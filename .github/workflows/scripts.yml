@@ -1,0 +1,77 @@
+name: deploy tooling
+
+# The deployment script is the one piece of code whose mistakes cost real money:
+# it uploads Wasm and initializes contracts. It is checked on every change, and
+# its `--dry-run` is exercised in CI so it cannot rot into something that only
+# works on the machine it was written on.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'contracts/**'
+      - '.github/workflows/scripts.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'contracts/**'
+      - '.github/workflows/scripts.yml'
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: typecheck and dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+
+      - name: Build contracts
+        working-directory: scripts
+        run: npm run build:contracts
+
+      - name: Install tooling
+        working-directory: scripts
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: scripts
+        run: npm run typecheck
+
+      # A dry run loads the real Wasm, derives valid placeholder addresses and
+      # runs the genuine argument encoding, so this exercises the cross-contract
+      # wiring — the part most likely to be wrong — without spending anything.
+      - name: Dry run
+        working-directory: scripts
+        env:
+          STELLAR_NETWORK: testnet
+          SOROBAN_RPC_URL: https://soroban-testnet.stellar.org
+          STELLAR_NETWORK_PASSPHRASE: Test SDF Network ; September 2015
+          DEPLOY_CONFIG: scripts/config/testnet.example.json
+        run: |
+          set -euo pipefail
+          # Generated per run: no key material is stored in the repository, not
+          # even a testnet one. A committed key is a key that gets reused.
+          node - <<'NODE' > "$GITHUB_ENV"
+          const { Keypair, StrKey } = require('@stellar/stellar-sdk');
+          const admin = Keypair.random();
+          console.log(`ADMIN_SECRET_KEY=${admin.secret()}`);
+          console.log(`TREASURY_PUBLIC_KEY=${admin.publicKey()}`);
+          console.log(`ATTESTER_PUBLIC_KEY=${admin.publicKey()}`);
+          console.log(`TOKEN_CONTRACT=${StrKey.encodeContract(Buffer.alloc(32, 7))}`);
+          NODE
+          npm run deploy:dry-run

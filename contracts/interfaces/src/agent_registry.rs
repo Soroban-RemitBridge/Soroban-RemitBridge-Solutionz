@@ -1,8 +1,6 @@
 //! Agent registry interface: types, error taxonomy and the generated client.
 
-use soroban_sdk::{
-    contractclient, contracterror, contracttype, Address, Env, Symbol, Vec,
-};
+use soroban_sdk::{contractclient, contracterror, contracttype, Address, Env, Symbol, Vec};
 
 /* ------------------------------------------------------------------ */
 /* types                                                               */

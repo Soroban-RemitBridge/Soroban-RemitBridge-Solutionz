@@ -21,7 +21,12 @@ pub fn attestation_published(
 ) {
     env.events().publish(
         (symbol_short!("kyc_pub"), subject.clone()),
-        (tier, attestation_hash.clone(), provider_id.clone(), expires_at),
+        (
+            tier,
+            attestation_hash.clone(),
+            provider_id.clone(),
+            expires_at,
+        ),
     );
 }
 
@@ -71,7 +76,11 @@ pub fn transfer_committed(
     new_daily_total: i128,
 ) {
     env.events().publish(
-        (symbol_short!("kyc_comm"), sender.clone(), corridor_id.clone()),
+        (
+            symbol_short!("kyc_comm"),
+            sender.clone(),
+            corridor_id.clone(),
+        ),
         (amount, tier, new_daily_total),
     );
 }

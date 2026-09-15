@@ -185,8 +185,11 @@ pub trait LiquidityPoolInterface {
     /// can always unwind exposure during an incident.
     fn set_paused(env: Env, paused: bool) -> Result<(), LiquidityError>;
 
-    fn open_region(env: Env, region_id: Symbol, utilization_cap_bps: u32)
-        -> Result<(), LiquidityError>;
+    fn open_region(
+        env: Env,
+        region_id: Symbol,
+        utilization_cap_bps: u32,
+    ) -> Result<(), LiquidityError>;
 
     /* ---------------- liquidity providers ---------------- */
 
@@ -245,12 +248,7 @@ pub trait LiquidityPoolInterface {
 
     /// Bond an agent would need to draw `additional` more in a region, so the
     /// agent app can prompt for a top-up before the draw fails.
-    fn required_bond_for(
-        env: Env,
-        agent: Address,
-        region_id: Symbol,
-        additional: i128,
-    ) -> i128;
+    fn required_bond_for(env: Env, agent: Address, region_id: Symbol, additional: i128) -> i128;
 
     fn pool_config(env: Env) -> Option<PoolConfig>;
 

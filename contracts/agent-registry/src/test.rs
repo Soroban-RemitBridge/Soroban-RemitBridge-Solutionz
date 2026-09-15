@@ -387,7 +387,8 @@ fn slash_moves_funds_to_treasury_and_is_capped_at_the_bond() {
     f.client.register_agent(&agent, &region(), &500);
 
     assert_eq!(
-        f.client.try_slash_agent(&agent, &501, &symbol_short!("fraud")),
+        f.client
+            .try_slash_agent(&agent, &501, &symbol_short!("fraud")),
         Err(Ok(AgentRegistryError::SlashExceedsBond))
     );
 

@@ -1,9 +1,7 @@
 //! Compliance hook interface: tiering types, error taxonomy and the generated
 //! client.
 
-use soroban_sdk::{
-    contractclient, contracterror, contracttype, Address, BytesN, Env, Symbol, Vec,
-};
+use soroban_sdk::{contractclient, contracterror, contracttype, Address, BytesN, Env, Symbol, Vec};
 
 /* ------------------------------------------------------------------ */
 /* types                                                               */
@@ -232,10 +230,7 @@ pub trait ComplianceHookInterface {
     fn set_paused(env: Env, paused: bool) -> Result<(), ComplianceError>;
 
     /// Create or replace a corridor's tier bands.
-    fn set_tier_thresholds(
-        env: Env,
-        thresholds: TierThresholds,
-    ) -> Result<(), ComplianceError>;
+    fn set_tier_thresholds(env: Env, thresholds: TierThresholds) -> Result<(), ComplianceError>;
 
     fn get_tier_thresholds(env: Env, corridor_id: Symbol) -> Option<TierThresholds>;
 

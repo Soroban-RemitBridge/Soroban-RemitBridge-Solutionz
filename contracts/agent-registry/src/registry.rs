@@ -372,7 +372,12 @@ impl AgentRegistryInterface for AgentRegistry {
             return Err(AgentRegistryError::RegionFull);
         }
 
-        apply_transition(&env, &mut record, AgentStatus::Authorized, &Symbol::new(&env, "approved"));
+        apply_transition(
+            &env,
+            &mut record,
+            AgentStatus::Authorized,
+            &Symbol::new(&env, "approved"),
+        );
         storage::bump_instance(&env);
         Ok(())
     }

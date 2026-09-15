@@ -5,7 +5,7 @@ use soroban_sdk::{contractimpl, symbol_short, token, Address, Bytes, BytesN, Env
 use remit_interfaces::agent_registry::AgentRegistryClient;
 use remit_interfaces::compliance::ComplianceHookClient;
 use remit_interfaces::escrow::{
-    ClaimQuote, ClaimReceipt, EscrowConfig, EscrowError, EscrowStats, EscrowInterface, Transfer,
+    ClaimQuote, ClaimReceipt, EscrowConfig, EscrowError, EscrowInterface, EscrowStats, Transfer,
     TransferStatus, MAX_FEE_BPS,
 };
 
@@ -115,8 +115,8 @@ fn check_agent(
     agent: &Address,
     corridor_id: &Symbol,
 ) -> Result<(), EscrowError> {
-    let outcome = AgentRegistryClient::new(env, registry)
-        .try_is_authorized_for_corridor(agent, corridor_id);
+    let outcome =
+        AgentRegistryClient::new(env, registry).try_is_authorized_for_corridor(agent, corridor_id);
     match outcome {
         Ok(Ok(true)) => Ok(()),
         Ok(Ok(false)) => Err(EscrowError::AgentNotAuthorized),
@@ -409,12 +409,7 @@ impl EscrowInterface for RemitEscrow {
             return Err(EscrowError::InvalidClaimCode);
         }
 
-        check_agent(
-            &env,
-            &config.agent_registry,
-            &agent,
-            &transfer.corridor_id,
-        )?;
+        check_agent(&env, &config.agent_registry, &agent, &transfer.corridor_id)?;
 
         let fee = fee_for(transfer.amount, config.fee_bps)?;
         let payout = transfer.amount - fee;
@@ -487,7 +482,13 @@ impl EscrowInterface for RemitEscrow {
         storage::set_stats(&env, &stats);
         storage::bump_instance(&env);
 
-        events::transfer_refunded(&env, transfer_id, &sender, transfer.amount, &transfer.corridor_id);
+        events::transfer_refunded(
+            &env,
+            transfer_id,
+            &sender,
+            transfer.amount,
+            &transfer.corridor_id,
+        );
         Ok(())
     }
 

@@ -35,8 +35,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      # The version here must match `rust-toolchain.toml`, which rustup treats as
+      # authoritative for any `cargo` invocation inside the checkout. Pinning it
+      # in the workflow as well means there is exactly one version in play: with
+      # `@stable`, this step would install a second toolchain that no command
+      # subsequently uses, and the components it installs (rustfmt, clippy) would
+      # belong to the toolchain nothing runs.
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.98.1
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
@@ -64,8 +71,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.98.1
           targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2

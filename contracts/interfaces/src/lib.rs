@@ -30,3 +30,4 @@
 pub mod agent_registry;
 pub mod compliance;
 pub mod escrow;
+pub mod liquidity;

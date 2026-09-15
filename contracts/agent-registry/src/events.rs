@@ -39,14 +39,18 @@ pub fn agent_status_changed(
 
 /// An agent added collateral without changing status.
 pub fn bond_topped_up(env: &Env, agent: &Address, amount: i128, new_bond: i128) {
-    env.events()
-        .publish((symbol_short!("bond_up"), agent.clone()), (amount, new_bond));
+    env.events().publish(
+        (symbol_short!("bond_up"), agent.clone()),
+        (amount, new_bond),
+    );
 }
 
 /// An agent withdrew excess collateral.
 pub fn bond_withdrawn(env: &Env, agent: &Address, amount: i128, new_bond: i128) {
-    env.events()
-        .publish((symbol_short!("bond_down"), agent.clone()), (amount, new_bond));
+    env.events().publish(
+        (symbol_short!("bond_down"), agent.clone()),
+        (amount, new_bond),
+    );
 }
 
 /// A slash was applied; `recovered` is what actually moved to the treasury.
@@ -81,8 +85,6 @@ pub fn corridor_mapped(env: &Env, corridor_id: &Symbol, region_id: &Symbol) {
 
 /// The operator key rotated.
 pub fn admin_changed(env: &Env, previous: &Address, next: &Address) {
-    env.events().publish(
-        (symbol_short!("admin"), previous.clone()),
-        next.clone(),
-    );
+    env.events()
+        .publish((symbol_short!("admin"), previous.clone()), next.clone());
 }

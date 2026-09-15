@@ -1,0 +1,104 @@
+name: Bug report
+description: Something behaves differently from what the code and docs say it should
+title: 'bug: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report security vulnerabilities here.** Use
+        [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
+        instead — see [SECURITY.md](../SECURITY.md).
+
+        Before filing, check whether the behaviour is a documented trade-off.
+        [`docs/assumptions.md`](../docs/assumptions.md) and the
+        [ADRs](../docs/adr/README.md) record the decisions already made,
+        including the costs that were accepted.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Where the problem is, as precisely as you can place it.
+      options:
+        - Contracts (escrow)
+        - Contracts (agent registry)
+        - Contracts (compliance hook)
+        - Contracts (liquidity pool)
+        - Backend API
+        - Backend event indexer
+        - Backend KYC / quoting / liquidity services
+        - Operator console
+        - Mobile app
+        - Deploy tooling
+        - Docs
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: Quote the code, doc or test that led you to expect it, if you can.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: |
+        Exact output, error code, or observed state. For an on-chain problem,
+        the error variant matters more than the message — the variants are
+        distinct on purpose.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: |
+        The shortest sequence that shows it. A failing test is the ideal
+        reproduction; a paste of the commands is the next best thing.
+      placeholder: |
+        1. `make db-up`
+        2. `cd backend && npm run dev`
+        3. `curl ...`
+        4. See ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: money
+    attributes:
+      label: Did this affect money?
+      description: |
+        Answer honestly — it routes the report, it does not make it more
+        serious than an incorrect transfer would already be.
+      options:
+        - 'No'
+        - 'Not in this environment, but it could'
+        - 'Yes — funds moved, were locked, or were released incorrectly'
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: The SHA you observed this on.
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - Node:
+        - Rust:
+        - OS:
+        - Network (local / testnet / other):
+        - Verification status (`make check` green?):

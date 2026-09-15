@@ -73,21 +73,14 @@ pub fn set_stats(env: &Env, stats: &EscrowStats) {
 /// Ids are monotonic and never reused, so an indexer that has seen id `n` can
 /// safely assume every id below it exists.
 pub fn next_id(env: &Env) -> u64 {
-    let current: u64 = env
-        .storage()
-        .instance()
-        .get(&DataKey::NextId)
-        .unwrap_or(0);
+    let current: u64 = env.storage().instance().get(&DataKey::NextId).unwrap_or(0);
     let next = current + 1;
     env.storage().instance().set(&DataKey::NextId, &next);
     next
 }
 
 pub fn transfer_count(env: &Env) -> u64 {
-    env.storage()
-        .instance()
-        .get(&DataKey::NextId)
-        .unwrap_or(0)
+    env.storage().instance().get(&DataKey::NextId).unwrap_or(0)
 }
 
 pub fn bump_instance(env: &Env) {

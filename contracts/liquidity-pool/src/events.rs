@@ -40,7 +40,11 @@ pub fn liquidity_withdrawn(
     total_deposited: i128,
 ) {
     env.events().publish(
-        (symbol_short!("lp_wdraw"), provider.clone(), region_id.clone()),
+        (
+            symbol_short!("lp_wdraw"),
+            provider.clone(),
+            region_id.clone(),
+        ),
         (shares, amount, total_deposited),
     );
 }

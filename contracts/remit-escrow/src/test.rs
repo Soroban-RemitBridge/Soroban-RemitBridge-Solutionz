@@ -57,9 +57,7 @@ struct Fixture {
 }
 
 fn hash_of(env: &Env, code: &[u8; 32]) -> BytesN<32> {
-    env.crypto()
-        .sha256(&Bytes::from_array(env, code))
-        .into()
+    env.crypto().sha256(&Bytes::from_array(env, code)).into()
 }
 
 fn now(f: &Fixture) -> u64 {
@@ -206,14 +204,7 @@ fn fee_above_the_on_chain_cap_is_rejected() {
     let client = RemitEscrowClient::new(&env, &id);
 
     assert_eq!(
-        client.try_initialize(
-            &admin,
-            &id,
-            &id,
-            &admin,
-            &(MAX_FEE_BPS + 1),
-            &MAX_EXPIRY
-        ),
+        client.try_initialize(&admin, &id, &id, &admin, &(MAX_FEE_BPS + 1), &MAX_EXPIRY),
         Err(Ok(EscrowError::InvalidConfig))
     );
 }
@@ -457,13 +448,16 @@ fn a_wrong_reveal_leaves_the_funds_untouched() {
     let agent = onboard_agent(&f, 1_000);
     let id = create(&f, &sender);
 
-    let outcome =
-        f.escrow
-            .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &[8u8; 32]));
+    let outcome = f
+        .escrow
+        .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &[8u8; 32]));
     assert_eq!(outcome, Err(Ok(EscrowError::InvalidClaimCode)));
 
     assert_eq!(escrow_balance(&f), AMOUNT);
-    assert_eq!(f.escrow.get_transfer(&id).unwrap().status, TransferStatus::Pending);
+    assert_eq!(
+        f.escrow.get_transfer(&id).unwrap().status,
+        TransferStatus::Pending
+    );
     assert_eq!(balance(&f, &f.treasury), 0);
 }
 
@@ -476,9 +470,9 @@ fn an_unbonded_agent_cannot_claim_even_with_the_right_code() {
     let id = create(&f, &sender);
 
     let stranger = Address::generate(&f.env);
-    let outcome = f
-        .escrow
-        .try_claim_transfer(&stranger, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
+    let outcome =
+        f.escrow
+            .try_claim_transfer(&stranger, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
     assert_eq!(outcome, Err(Ok(EscrowError::AgentNotAuthorized)));
     assert_eq!(escrow_balance(&f), AMOUNT);
 }
@@ -496,9 +490,9 @@ fn a_pending_but_unapproved_agent_cannot_claim() {
     f.registry.register_agent(&agent, &region(), &1_000);
 
     let id = create(&f, &sender);
-    let outcome = f
-        .escrow
-        .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
+    let outcome =
+        f.escrow
+            .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
     assert_eq!(outcome, Err(Ok(EscrowError::AgentNotAuthorized)));
 }
 
@@ -513,9 +507,9 @@ fn revoking_an_agent_mid_flight_blocks_the_claim() {
 
     f.registry.revoke_agent(&agent, &symbol_short!("fraud"));
 
-    let outcome = f
-        .escrow
-        .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
+    let outcome =
+        f.escrow
+            .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
     assert_eq!(outcome, Err(Ok(EscrowError::AgentNotAuthorized)));
 }
 
@@ -553,9 +547,9 @@ fn a_sender_cannot_claim_their_own_transfer() {
     f.registry.authorize_agent(&sender);
 
     let id = create(&f, &sender);
-    let outcome = f
-        .escrow
-        .try_claim_transfer(&sender, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
+    let outcome =
+        f.escrow
+            .try_claim_transfer(&sender, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
     assert_eq!(outcome, Err(Ok(EscrowError::SenderCannotClaim)));
 }
 
@@ -570,9 +564,9 @@ fn claiming_after_expiry_is_refused_in_favour_of_a_refund() {
 
     f.env.ledger().set_timestamp(now(&f) + 8 * DAY);
 
-    let outcome = f
-        .escrow
-        .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
+    let outcome =
+        f.escrow
+            .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
     assert_eq!(outcome, Err(Ok(EscrowError::TransferExpired)));
     assert_eq!(escrow_balance(&f), AMOUNT);
 }
@@ -589,9 +583,9 @@ fn an_unreachable_registry_fails_the_claim_closed() {
     // Point the escrow at an address with no contract behind it.
     f.escrow.set_agent_registry(&Address::generate(&f.env));
 
-    let outcome = f
-        .escrow
-        .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
+    let outcome =
+        f.escrow
+            .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
     assert_eq!(outcome, Err(Ok(EscrowError::RegistryCallFailed)));
     // The point of failing closed: no funds left escrow.
     assert_eq!(escrow_balance(&f), AMOUNT);
@@ -712,7 +706,10 @@ fn anyone_can_refund_an_expired_transfer_but_only_to_the_sender() {
 
     assert_eq!(balance(&f, &sender), before + AMOUNT);
     assert_eq!(balance(&f, &helper), 0);
-    assert_eq!(f.escrow.get_transfer(&id).unwrap().status, TransferStatus::Refunded);
+    assert_eq!(
+        f.escrow.get_transfer(&id).unwrap().status,
+        TransferStatus::Refunded
+    );
     assert_eq!(f.escrow.escrow_stats().refunded, 1);
 }
 
@@ -730,9 +727,9 @@ fn a_refunded_transfer_cannot_then_be_claimed() {
 
     // The code is now worthless, which is exactly the incentive for a recipient
     // to cash out promptly.
-    let outcome = f
-        .escrow
-        .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
+    let outcome =
+        f.escrow
+            .try_claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
     assert_eq!(outcome, Err(Ok(EscrowError::TransferNotPending)));
 }
 
@@ -778,7 +775,8 @@ fn unknown_transfers_read_safely_and_error_clearly() {
         Err(Ok(EscrowError::TransferNotFound))
     );
     assert_eq!(
-        f.escrow.try_cancel_transfer(&Address::generate(&f.env), &999),
+        f.escrow
+            .try_cancel_transfer(&Address::generate(&f.env), &999),
         Err(Ok(EscrowError::TransferNotFound))
     );
 }

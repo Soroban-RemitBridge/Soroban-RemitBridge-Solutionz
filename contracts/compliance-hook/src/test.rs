@@ -41,7 +41,11 @@ impl MockEscrow {
     }
 
     pub fn check(env: Env, hook: Address, sender: Address, amount: i128, corridor_id: Symbol) {
-        ComplianceHookClient::new(&env, &hook).check_transfer_allowed(&sender, &amount, &corridor_id);
+        ComplianceHookClient::new(&env, &hook).check_transfer_allowed(
+            &sender,
+            &amount,
+            &corridor_id,
+        );
     }
 }
 
@@ -170,16 +174,15 @@ fn pause_blocks_every_transfer_in_every_corridor() {
     f.client.set_paused(&true);
 
     assert_eq!(
-        f.client.try_check_transfer_allowed(&sender, &10, &corridor()),
+        f.client
+            .try_check_transfer_allowed(&sender, &10, &corridor()),
         Err(Ok(ComplianceError::TransfersPaused))
     );
     // Reads keep working so the console can explain the outage.
     assert!(f.client.get_tier_thresholds(&corridor()).is_some());
 
     f.client.set_paused(&false);
-    assert!(f
-        .client
-        .check_transfer_allowed(&sender, &10, &corridor()));
+    assert!(f.client.check_transfer_allowed(&sender, &10, &corridor()));
 }
 
 #[test]
@@ -255,7 +258,8 @@ fn mid_tier_transfer_without_attestation_is_refused() {
     let f = setup();
     let sender = Address::generate(&f.env);
     assert_eq!(
-        f.client.try_check_transfer_allowed(&sender, &101, &corridor()),
+        f.client
+            .try_check_transfer_allowed(&sender, &101, &corridor()),
         Err(Ok(ComplianceError::AttestationMissing))
     );
 
@@ -272,12 +276,11 @@ fn standard_attestation_unlocks_the_mid_band_only() {
     let sender = Address::generate(&f.env);
     attest(&f, &sender, KycTier::Standard, 30);
 
-    assert!(f
-        .client
-        .check_transfer_allowed(&sender, &500, &corridor()));
+    assert!(f.client.check_transfer_allowed(&sender, &500, &corridor()));
 
     assert_eq!(
-        f.client.try_check_transfer_allowed(&sender, &1_001, &corridor()),
+        f.client
+            .try_check_transfer_allowed(&sender, &1_001, &corridor()),
         Err(Ok(ComplianceError::TierTooLow))
     );
     let decision = f.client.explain_transfer(&sender, &1_001, &corridor());
@@ -306,7 +309,8 @@ fn attestation_expiry_closes_the_gate() {
     // Step past the validity window.
     f.env.ledger().set_timestamp(2 * DAY);
     assert_eq!(
-        f.client.try_check_transfer_allowed(&sender, &500, &corridor()),
+        f.client
+            .try_check_transfer_allowed(&sender, &500, &corridor()),
         Err(Ok(ComplianceError::AttestationExpired))
     );
 }
@@ -324,7 +328,8 @@ fn a_revoked_attestation_blocks_even_an_otherwise_unverified_transfer() {
     // Even the no-verification band is closed: a revocation is a sanctions or
     // fraud signal, not a downgrade to "unverified".
     assert_eq!(
-        f.client.try_check_transfer_allowed(&sender, &100, &corridor()),
+        f.client
+            .try_check_transfer_allowed(&sender, &100, &corridor()),
         Err(Ok(ComplianceError::AttestationRevoked))
     );
 }
@@ -436,7 +441,8 @@ fn structuring_many_small_transfers_still_hits_the_daily_ceiling() {
 
     assert_eq!(f.client.daily_volume(&sender, &corridor(), &0), 5_000);
     assert_eq!(
-        f.client.try_check_transfer_allowed(&sender, &100, &corridor()),
+        f.client
+            .try_check_transfer_allowed(&sender, &100, &corridor()),
         Err(Ok(ComplianceError::DailyLimitExceeded))
     );
     // The write path enforces the ceiling too, not just the read path.
@@ -451,11 +457,13 @@ fn non_positive_amounts_are_refused() {
     let f = setup();
     let sender = Address::generate(&f.env);
     assert_eq!(
-        f.client.try_check_transfer_allowed(&sender, &0, &corridor()),
+        f.client
+            .try_check_transfer_allowed(&sender, &0, &corridor()),
         Err(Ok(ComplianceError::InvalidAmount))
     );
     assert_eq!(
-        f.client.try_check_transfer_allowed(&sender, &-1, &corridor()),
+        f.client
+            .try_check_transfer_allowed(&sender, &-1, &corridor()),
         Err(Ok(ComplianceError::InvalidAmount))
     );
 }
@@ -521,7 +529,9 @@ fn a_stranger_cannot_commit_volume_against_a_senders_limit() {
     // A direct call by anyone other than the registered escrow cannot satisfy
     // `escrow.require_auth()`.
     let stranger = Address::generate(&env);
-    assert!(client.try_commit_transfer(&stranger, &100, &corridor()).is_err());
+    assert!(client
+        .try_commit_transfer(&stranger, &100, &corridor())
+        .is_err());
     assert_eq!(client.daily_volume(&stranger, &corridor(), &0), 0);
 }
 
@@ -562,7 +572,8 @@ fn explain_transfer_never_errors_for_an_unknown_corridor() {
     let f = setup();
     let sender = Address::generate(&f.env);
     let decision: TransferDecision =
-        f.client.explain_transfer(&sender, &10, &symbol_short!("NOPE"));
+        f.client
+            .explain_transfer(&sender, &10, &symbol_short!("NOPE"));
     assert!(!decision.allowed);
     assert_eq!(decision.reason, symbol_short!("no_corr"));
 }

@@ -57,11 +57,7 @@ fn check_authorized(
     }
 }
 
-fn registry_bond(
-    env: &Env,
-    registry: &Address,
-    agent: &Address,
-) -> Result<i128, LiquidityError> {
+fn registry_bond(env: &Env, registry: &Address, agent: &Address) -> Result<i128, LiquidityError> {
     let outcome = AgentRegistryClient::new(env, registry).try_get_bond(agent);
     match outcome {
         Ok(Ok(bond)) => Ok(bond),
@@ -107,7 +103,8 @@ impl LiquidityPoolInterface for LiquidityPool {
             return Err(LiquidityError::AlreadyInitialized);
         }
         validate_ratio(collateral_ratio_bps)?;
-        if default_utilization_cap_bps == 0 || default_utilization_cap_bps > MAX_UTILIZATION_CAP_BPS {
+        if default_utilization_cap_bps == 0 || default_utilization_cap_bps > MAX_UTILIZATION_CAP_BPS
+        {
             return Err(LiquidityError::InvalidConfig);
         }
         admin.require_auth();
@@ -550,12 +547,7 @@ impl LiquidityPoolInterface for LiquidityPool {
         storage::get_shares(&env, &provider, &region_id)
     }
 
-    fn required_bond_for(
-        env: Env,
-        agent: Address,
-        region_id: Symbol,
-        additional: i128,
-    ) -> i128 {
+    fn required_bond_for(env: Env, agent: Address, region_id: Symbol, additional: i128) -> i128 {
         // Pure and non-failing on purpose: this is the call the agent app makes
         // to explain a refused draw, so it has to work on the failing path.
         if additional <= 0 {

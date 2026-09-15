@@ -27,7 +27,11 @@ pub fn transfer_created(
     expiry: u64,
 ) {
     env.events().publish(
-        (symbol_short!("tr_create"), sender.clone(), corridor_id.clone()),
+        (
+            symbol_short!("tr_create"),
+            sender.clone(),
+            corridor_id.clone(),
+        ),
         (id, amount, token.clone(), claim_hash.clone(), expiry),
     );
 }
@@ -43,7 +47,11 @@ pub fn transfer_claimed(
     payout: i128,
 ) {
     env.events().publish(
-        (symbol_short!("tr_claim"), agent.clone(), corridor_id.clone()),
+        (
+            symbol_short!("tr_claim"),
+            agent.clone(),
+            corridor_id.clone(),
+        ),
         (id, gross, fee, payout),
     );
 }
@@ -51,15 +59,29 @@ pub fn transfer_claimed(
 /// An expired transfer was returned to its sender.
 pub fn transfer_refunded(env: &Env, id: u64, sender: &Address, amount: i128, corridor_id: &Symbol) {
     env.events().publish(
-        (symbol_short!("tr_refnd"), sender.clone(), corridor_id.clone()),
+        (
+            symbol_short!("tr_refnd"),
+            sender.clone(),
+            corridor_id.clone(),
+        ),
         (id, amount),
     );
 }
 
 /// The sender withdrew a transfer nobody had claimed.
-pub fn transfer_cancelled(env: &Env, id: u64, sender: &Address, amount: i128, corridor_id: &Symbol) {
+pub fn transfer_cancelled(
+    env: &Env,
+    id: u64,
+    sender: &Address,
+    amount: i128,
+    corridor_id: &Symbol,
+) {
     env.events().publish(
-        (symbol_short!("tr_cncl"), sender.clone(), corridor_id.clone()),
+        (
+            symbol_short!("tr_cncl"),
+            sender.clone(),
+            corridor_id.clone(),
+        ),
         (id, amount),
     );
 }

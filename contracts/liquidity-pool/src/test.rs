@@ -153,7 +153,10 @@ fn ratios_can_be_tuned_within_bounds() {
     );
     f.pool.set_utilization_cap(&region(), &5_000);
     assert_eq!(
-        f.pool.get_pool_health(&region()).unwrap().utilization_cap_bps,
+        f.pool
+            .get_pool_health(&region())
+            .unwrap()
+            .utilization_cap_bps,
         5_000
     );
 }
@@ -229,7 +232,10 @@ fn additional_deposits_from_the_same_provider_accumulate_shares() {
 
     assert_eq!(f.pool.share_balance(&provider, &region()), 1_500);
     // Still one depositor: the counter tracks distinct providers, not deposits.
-    assert_eq!(f.pool.get_pool_health(&region()).unwrap().depositor_count, 1);
+    assert_eq!(
+        f.pool.get_pool_health(&region()).unwrap().depositor_count,
+        1
+    );
     assert_eq!(f.pool.liquidity_stats().total_deposits, 2);
 }
 
@@ -252,7 +258,10 @@ fn withdrawing_more_shares_than_held_is_rejected() {
         f.pool.try_withdraw_liquidity(&provider, &region(), &1_001),
         Err(Ok(LiquidityError::InsufficientShares))
     );
-    assert!(f.pool.try_withdraw_liquidity(&provider, &region(), &0).is_err());
+    assert!(f
+        .pool
+        .try_withdraw_liquidity(&provider, &region(), &0)
+        .is_err());
 }
 
 #[test]
@@ -265,7 +274,10 @@ fn a_provider_can_redeem_shares_for_float() {
     assert_eq!(received, 400);
     assert_eq!(balance(&f, &provider), 400);
     assert_eq!(f.pool.share_balance(&provider, &region()), 600);
-    assert_eq!(f.pool.get_pool_health(&region()).unwrap().total_deposited, 600);
+    assert_eq!(
+        f.pool.get_pool_health(&region()).unwrap().total_deposited,
+        600
+    );
 }
 
 #[test]

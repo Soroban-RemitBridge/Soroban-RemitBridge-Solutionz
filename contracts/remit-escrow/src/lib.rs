@@ -33,8 +33,8 @@
 //! distinguish `sha256("1234")` from `sha256(256 random bits)`; a guessable code
 //! is brute-forceable offline from the published hash. Code generation is
 //! therefore a hard requirement on the client, specified in `docs/security.md`
-//! and implemented once, in `mobile/src/lib/claimCode.ts`, so there is a single
-//! place to get it right.
+//! and implemented once, in `mobile/src/lib/claim.ts`, so there is a single place
+//! to get it right.
 //!
 //! ## Refund, expiry and the race the design accepts
 //!

@@ -99,9 +99,10 @@ model Region {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  agents   Agent[]
-  pools    LiquidityPoolSnapshot[]
-  exposure AgentExposure[]
+  agents    Agent[]
+  pools     LiquidityPoolSnapshot[]
+  exposure  AgentExposure[]
+  corridors Corridor[]
 }
 
 model Corridor {
@@ -290,8 +291,8 @@ model Transfer {
 
   sender   User     @relation(fields: [senderId], references: [id])
   agent    Agent?   @relation(fields: [agentId], references: [id])
-  corridor Corridor @relation(fields: [corridorId], references: [id])
-  events   TransferEvent[]
+  corridor Corridor     @relation(fields: [corridorId], references: [id])
+  events   ChainEvent[]
 
   @@index([status, expiry])
   @@index([corridorId, createdAt])

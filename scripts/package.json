@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@stellar/stellar-sdk": "^13.1.0",
+    "@stellar/stellar-sdk": "^17.1.0",
     "dotenv": "^16.4.7",
     "zod": "^3.24.1"
   },

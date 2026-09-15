@@ -14,7 +14,15 @@ import {
  * fixture with the wrong XDR would pass against a decoder that is itself wrong,
  * which is the failure mode this whole module exists to prevent.
  */
-function encode(value: unknown, type?: string): string {
+/**
+ * The `type` hint is taken from the SDK's own option type rather than written as
+ * `string`. The SDK narrows it to a union of the encodings it actually
+ * implements, and a free `string` here would compile while promising an encoding
+ * that does not exist — which is a fixture that looks right and is not.
+ */
+type ScValTypeHint = NonNullable<Parameters<typeof nativeToScVal>[1]>['type'];
+
+function encode(value: unknown, type?: ScValTypeHint): string {
   return nativeToScVal(value, type === undefined ? undefined : { type }).toXDR('base64');
 }
 

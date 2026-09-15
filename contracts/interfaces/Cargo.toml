@@ -1,0 +1,25 @@
+[package]
+name = "remit-interfaces"
+description = "Shared contract types, errors and cross-contract clients for RemitBridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+# Exactly one crate type, and deliberately *not* `cdylib`.
+#
+# This crate holds no `#[contract]` and no `#[contractimpl]`, so it produces no
+# Wasm exports. Every contract crate depends on it for shared types and for the
+# generated cross-contract clients — which means contracts depend on an
+# interface crate rather than on each other. See the note in `src/lib.rs`.
+crate-type = ["rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

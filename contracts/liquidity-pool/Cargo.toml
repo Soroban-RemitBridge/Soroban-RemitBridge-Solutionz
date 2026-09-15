@@ -14,7 +14,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-agent-registry = { workspace = true }
+remit-interfaces = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

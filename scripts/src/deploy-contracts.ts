@@ -220,12 +220,17 @@ async function main(): Promise<void> {
   context.log('\n[4/5] Configuring regions, corridors and tier bands…');
 
   for (const region of config.regions) {
+    // `add_region`, not `set_min_bond`. `set_min_bond` loads the existing region
+    // and returns `UnknownRegion` if there is not one — it updates a bond floor,
+    // it does not create the region. Calling it first fails the whole deployment
+    // on the first region, and the error names neither the method nor the
+    // ordering problem.
     await call(
       context,
       agentRegistry,
-      'set_min_bond',
-      [scv.symbol(region.id), scv.i128(region.minBond)],
-      `agent-registry.set_min_bond(${region.id})`,
+      'add_region',
+      [scv.symbol(region.id), scv.i128(region.minBond), scv.u32(region.maxAgents)],
+      `agent-registry.add_region(${region.id})`,
     );
     await call(
       context,

@@ -10,11 +10,11 @@
 #     recorded — the only version of this that is safe on a database holding
 #     financial records.
 #
-#   * No migrations directory → `prisma db push` with a loud warning. This
-#     repository ships without a migrations directory because generating one
-#     requires a live database, and inventing an empty migration history would be
-#     worse than admitting the gap. `db push` is fine for local development and
-#     is a data-loss risk anywhere else, so it says so.
+#   * No migrations directory → `prisma db push` with a loud warning. The
+#     repository now ships one (`prisma/migrations/`, generated against Postgres
+#     16 with `npm run prisma:migrate -- --name init`), so this path is for a
+#     checkout where it has been removed or not yet generated. `db push` is fine
+#     for local development and is a data-loss risk anywhere else, so it says so.
 #
 # `set -e` matters more than usual here: if the schema step fails, the API must
 # not start. A service running against a schema it does not match is far worse

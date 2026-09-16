@@ -1,0 +1,148 @@
+# Render blueprint: managed Postgres, the API, and the indexer worker.
+#
+# One file because these three have to agree with each other: the API and the
+# indexer read the same four contract addresses, and the indexer must not fall
+# behind a schema the API has already migrated. A blueprint keeps them from being
+# three dashboard sessions that drift.
+#
+# Deploy:  Render dashboard → New → Blueprint → pick this repository.
+# Values marked `sync: false` are secrets or environment-specific and are asked
+# for at deploy time rather than committed. `deployments/testnet.json` holds the
+# public halves and the four contract ids.
+#
+# Two plan constraints worth knowing before you pick a workspace:
+#
+#   * **Background workers are not on the free plan.** The indexer below asks for
+#     `starter`. Without it, the API and database still deploy and the console
+#     renders real network configuration, but nothing projects chain events into
+#     the read model, so the agents, transfers and liquidity panels stay empty.
+#     Running the indexer somewhere else is fine — it only needs DATABASE_URL and
+#     the same contract ids — and `docs/local-development.md` has the command.
+#   * **A free Postgres instance is deleted after 30 days.** That is Render's
+#     limit, not this project's; upgrade the database before then if the data
+#     matters.
+#
+# Region: pick one and keep all three resources in it. Cross-region database
+# latency is the kind of cost that shows up as an unexplained slow endpoint.
+
+databases:
+  - name: remitbridge-postgres
+    databaseName: remitbridge
+    user: remitbridge
+    plan: free
+    region: frankfurt
+
+services:
+  # ------------------------------------------------------------------ API ----
+  # The container applies the schema before it starts serving: its entrypoint runs
+  # `prisma migrate deploy` against `prisma/migrations/` and exits non-zero if that
+  # fails, so the API never serves a request against a schema it does not match.
+  - type: web
+    name: remitbridge-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    # The Dockerfile is the deployment contract, not a convenience: it is the
+    # same image `docker compose up` builds locally, which is why "works locally"
+    # and "works here" are the same statement.
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: remitbridge-postgres
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: STELLAR_NETWORK
+        value: testnet
+      - key: SOROBAN_RPC_URL
+        value: https://soroban-testnet.stellar.org
+      - key: STELLAR_NETWORK_PASSPHRASE
+        value: Test SDF Network ; September 2015
+      - key: CONTRACT_ESCROW
+        sync: false
+      - key: CONTRACT_AGENT_REGISTRY
+        sync: false
+      - key: CONTRACT_COMPLIANCE_HOOK
+        sync: false
+      - key: CONTRACT_LIQUIDITY_POOL
+        sync: false
+      # Secrets. An unset one fails the process at boot with the variable named,
+      # which is the intended behaviour: a misconfigured payments service should
+      # not start.
+      - key: ATTESTER_SECRET_KEY
+        sync: false
+      - key: OPERATOR_SECRET_KEY
+        sync: false
+      - key: QUOTE_SIGNING_SECRET_KEY
+        sync: false
+      - key: TREASURY_PUBLIC_KEY
+        sync: false
+      # No KYC vendor is configured in this blueprint, so the deterministic mock
+      # runs. `http` is the real adapter: it needs a base URL, an API key and a
+      # webhook secret, and it refuses to approve anything it cannot verify.
+      - key: KYC_PROVIDER
+        value: mock
+      # Prices come from the Stellar DEX through Horizon. `SDEX_ASSETS` maps each
+      # currency to the asset it trades as; a currency missing from it is refused
+      # by name rather than priced from a guess.
+      - key: PRICE_SOURCE
+        value: horizon
+      - key: HORIZON_URL
+        value: https://horizon-testnet.stellar.org
+      - key: SDEX_ASSETS
+        value: '{"USD":"USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN","XLM":"native"}'
+
+  # -------------------------------------------------------------- indexer ----
+  # Its own service, not a thread inside the API: a crashed indexer must not take
+  # the API down with it, and a busy API must not starve the loop. It needs no
+  # public URL, only the database and the contract addresses.
+  - type: worker
+    name: remitbridge-indexer
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: node dist/event-indexer/cli.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: remitbridge-postgres
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: STELLAR_NETWORK
+        value: testnet
+      - key: SOROBAN_RPC_URL
+        value: https://soroban-testnet.stellar.org
+      - key: STELLAR_NETWORK_PASSPHRASE
+        value: Test SDF Network ; September 2015
+      - key: CONTRACT_ESCROW
+        sync: false
+      - key: CONTRACT_AGENT_REGISTRY
+        sync: false
+      - key: CONTRACT_COMPLIANCE_HOOK
+        sync: false
+      - key: CONTRACT_LIQUIDITY_POOL
+        sync: false
+      - key: ATTESTER_SECRET_KEY
+        sync: false
+      - key: OPERATOR_SECRET_KEY
+        sync: false
+      - key: QUOTE_SIGNING_SECRET_KEY
+        sync: false
+      - key: TREASURY_PUBLIC_KEY
+        sync: false
+      # The ledger to start from when the cursor table is empty. `latest` skips
+      # history; a number backfills it, and events older than the RPC node's
+      # retention window are gone for good — so this is worth setting to the
+      # deployment's first ledger, from `deployments/testnet.json`.
+      - key: INDEXER_START_LEDGER
+        value: latest
+      - key: INDEXER_STORE_RAW_XDR
+        value: 'true'

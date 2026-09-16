@@ -293,6 +293,12 @@ npm install
 npm run build:contracts            # writes contracts/target/wasm32v1-none/release
 ```
 
+The backend needs one more thing that used to be generated on first run: a
+migration history. It is committed at `backend/prisma/migrations/`, so a fresh
+database is brought up with `prisma migrate deploy` rather than `db push`. To add
+a migration after changing the schema, point `DATABASE_URL` at a database and run
+`npm run prisma:migrate -- --name <what-changed>`.
+
 ### 2. Deploy and wire (Stellar Testnet)
 
 ```bash
@@ -452,7 +458,7 @@ What the suites cover, and why those cases:
 | Component | Target | Command |
 | --- | --- | --- |
 | Contracts | Stellar Testnet | `cd scripts && npm run deploy` |
-| Backend + indexer | Railway / Render / Fly.io | `docker compose` or the `backend/Dockerfile` |
+| Backend + indexer | Render (blueprint in `render.yaml`) | Render dashboard → New → Blueprint, or `docker compose` |
 | Console | Vercel | `cd admin-web && vercel --prod` |
 | Mobile | EAS Build | `cd mobile && npx eas build --profile preview --platform android` |
 
@@ -503,6 +509,48 @@ the deployment carries a single throwaway operator for demonstration. It is
 "unavailable" state rather than inventing data — the proxy answers `502` for a
 real backend call, which is the honest outcome and is asserted in the end-to-end
 suite.
+
+### Backend and database
+
+`render.yaml` is a blueprint for the API, the indexer and a managed Postgres
+instance. Point Render at this repository and the three come up together:
+
+It asks at deploy time for the four contract ids and the key material, which are
+in `deployments/testnet.json` (public halves) and `scripts/.env` (secrets). Nothing
+secret is in the blueprint.
+
+The container applies the schema before it serves anything — `prisma migrate
+deploy` against the committed migration history, and a non-zero exit if it fails
+— so the API never answers a request against a schema it does not match.
+
+Two plan limits decide what you get, and both are the platform's rather than this
+project's:
+
+| Limit | Effect |
+| --- | --- |
+| Background workers are not on the free plan | The API and database still deploy and the console shows real network configuration. Nothing projects chain events, so the agents, transfers and liquidity panels stay empty until the indexer runs somewhere — it needs only `DATABASE_URL` and the contract ids. |
+| A free Postgres instance is deleted after 30 days | Upgrade before then, or treat the deployment as disposable. |
+
+Then point the console at it: set `REMITBRIDGE_API_URL` to the API's public URL
+and redeploy. The console's `/api/backend/*` proxy is the only path to the API, so
+nothing else changes.
+
+**Two known gaps in what the read model can show.** Both were found by making the
+indexer actually run against a real chain, and both are the reason a console can
+be correctly wired and still look quiet:
+
+- **Nothing creates the off-chain rows the chain events project onto.** A
+  `transfer.created` event needs a `User` for its sender; an agent event needs an
+  `Agent` row. The indexer updates both and logs a warning when they are absent —
+  deliberately, because inventing a customer record with a fabricated country code
+  or an agent with a fabricated bond is worse than an empty panel in a compliance
+  product. There is no onboarding endpoint that creates them yet (`/kyc/verifications`
+  takes a `userId`), so this is an API-side gap, not a hosting one.
+- **The audit row was written before the projection it depends on.** A
+  `transfer.created` event failed its own foreign key — `ChainEvent.transferId`
+  points at a `Transfer` that the projection creates — which crashed the indexer
+  loop on the first real event and left the read model permanently behind. Fixed;
+  see the note at `persist` in `src/event-indexer/indexer.ts`.
 
 ### What a transfer costs
 

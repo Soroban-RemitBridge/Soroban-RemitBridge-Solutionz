@@ -34,6 +34,11 @@ changelog starts when the project first had a deployment to talk about.
 - **A cost report** (`cargo test -p remit-escrow cost_report_hot_paths`) measuring
   instructions, memory, ledger entries, bytes, events and modelled rent for every
   entry point that moves money.
+- **A two-minute product pitch video** (`docs/media/remitbridge-pitch.mp4`, with a
+  thumbnail), linked from the README. Every screen in it is the product's own —
+  the console recorded from a production build, the mobile app through its Expo web
+  target against the real backend — and every address, hash and amount is read from
+  `deployments/testnet.json`.
 - Console end-to-end coverage in a real browser (56 tests), and unit coverage for
   the session format, the role table and contract argument encoding.
 
@@ -50,6 +55,12 @@ changelog starts when the project first had a deployment to talk about.
 
 ### Fixed
 
+- **The sender's quote screen rendered stroop amounts as if they were decimal**,
+  showing a 40 USD transfer as `You send 400,000,000 USD`. `quote.amount` and
+  `quote.clientRate` are fixed point with seven decimals, so they go through
+  `formatAmount` rather than `formatRate`. Found by reading the figure off the
+  screen while capturing the pitch video; see the note in the README's list of
+  bugs found by running the thing.
 - **`publish_attestation` trapped on a real network.** A `#[contracttype]` enum
   crosses the ABI as a one-element vector of the case name, not as a bare symbol;
   the wrong form fails inside the contract with an error naming neither the argument

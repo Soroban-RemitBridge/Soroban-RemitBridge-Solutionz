@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { Banner, Button, Card, KeyValue, Screen } from '@/components/ui';
 import { ClaimCodeDisplay } from '@/components/claim-code-display';
-import { formatAmount, formatRate, shortId } from '@/lib/format';
+import { formatAmount, shortId } from '@/lib/format';
 import { colors, spacing } from '@/theme';
 
 /**
@@ -68,7 +68,9 @@ export default function SenderClaimScreen() {
         <KeyValue label="Amount" value={formatAmount(params.amount ?? null)} />
         <KeyValue
           label={`Rate offered${params.destCurrency ? ` (${params.destCurrency})` : ''}`}
-          value={formatRate(params.clientRate ?? '—')}
+          // Stroops, like `amount` above: `formatRate` would group the raw
+          // fixed-point value and show a rate ten million times too large.
+          value={formatAmount(params.clientRate ?? null)}
         />
         <KeyValue label="Quote reference" value={shortId(params.quoteId ?? null, 8, 4)} />
         <KeyValue label="Funding account" value={shortId(params.senderAddress ?? null, 8, 6)} />

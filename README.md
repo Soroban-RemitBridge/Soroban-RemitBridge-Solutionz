@@ -15,9 +15,56 @@ claim code to a local agent and walk away with cash.
 
 ---
 
+## Pitch video
+
+<p>
+  <a href="https://github.com/Soroban-RemitBridge/Soroban-RemitBridge-Solutionz/blob/main/docs/media/remitbridge-pitch.mp4">
+    <img src="https://img.shields.io/badge/%E2%96%B6%20Watch%20the%202--minute%20pitch-0B1220?style=for-the-badge&amp;labelColor=0B1220&amp;color=22D3EE" alt="Watch the 2-minute pitch">
+  </a>
+  <a href="https://github.com/Soroban-RemitBridge/Soroban-RemitBridge-Solutionz/raw/main/docs/media/remitbridge-pitch.mp4">
+    <img src="https://img.shields.io/badge/%E2%AC%87%20Download%20MP4%20%C2%B7%2023%20MB%20%C2%B7%201080p-0B1220?style=for-the-badge&amp;labelColor=0B1220&amp;color=64748B" alt="Download the MP4">
+  </a>
+  <img src="https://img.shields.io/badge/runtime-1%3A59-0B1220?style=for-the-badge&amp;labelColor=0B1220&amp;color=5EEAD4" alt="Runtime 1 minute 59 seconds">
+</p>
+
+[![RemitBridge — product pitch video](docs/media/remitbridge-pitch-thumbnail.jpg)](https://github.com/Soroban-RemitBridge/Soroban-RemitBridge-Solutionz/blob/main/docs/media/remitbridge-pitch.mp4)
+
+**▶ [Watch the pitch](https://github.com/Soroban-RemitBridge/Soroban-RemitBridge-Solutionz/blob/main/docs/media/remitbridge-pitch.mp4)**
+· **[Download the MP4](https://github.com/Soroban-RemitBridge/Soroban-RemitBridge-Solutionz/raw/main/docs/media/remitbridge-pitch.mp4)**
+(23 MB, 1920×1080, 30 fps) · narrating the problem, the product, the live console and the on-chain evidence in under two minutes.
+
+| | Scene | On screen |
+| --- | --- | --- |
+| 00:00 | The last mile | Money settles in seconds; cash in hand is the broken part |
+| 00:11 | The problem | Correspondent bank, mobile-money float — or nothing; what a smaller anchor has to build |
+| 00:23 | The solution | An agent-network layer: sender, agent, recipient |
+| 00:34 | Quote and KYC preflight | The sender's real screens, and the API's answer for the amount |
+| 00:48 | Escrow and commit-reveal | `commit_volume` from the escrow contract; one call that enforces *and* records |
+| 00:58 | Agent cash-out | The claim code a recipient holds, its `sha256`, and the permissionless refund |
+| 01:08 | Operator console | A screen recording of the built console, agents through corridors |
+| 01:23 | Architecture | The four contracts, their testnet addresses and Wasm sizes, three keys |
+| 01:35 | Verified on testnet | `verify` and `smoke-test` output: 13 checks, 98/2 settlement, empty escrow, −11.8% instructions |
+| 01:48 | Close | What it is, where it runs, where the record is |
+
+**What is real in it.** Every screen is the product's own: the mobile and console
+frames are captured from the running app (the console from `next build` served the
+way its end-to-end suite serves it, the mobile app through its Expo web target
+against the real backend), the quote shown is an HMAC-signed quote returned by the
+quoting service, and every address, hash and amount comes from
+[`deployments/testnet.json`](deployments/testnet.json). The narration is synthesised
+with Gemini TTS and the film is assembled with ffmpeg from stills rendered at 2×.
+
+**What it does not claim.** No backend is hosted, so the console is filmed against
+the stub backend its browser suite drives rather than against a live service, and
+the deployment it runs on is the same one the verification table below describes —
+testnet, test asset, no funded anchor. The mobile app is filmed through its web
+target, because no native build has been produced in this environment.
+
+---
+
 ## Table of contents
 
-- [How a transfer works](#how-a-transfer-works)
+- [Pitch video](#pitch-video)
 - [Architecture](#architecture)
 - [Trust and compliance model](#trust-and-compliance-model)
 - [Repository layout](#repository-layout)
@@ -704,6 +751,14 @@ Bugs found this way and fixed, none of which reading the code would have caught:
    were satisfied by a single-key deployment and wrong for a real one. Found by
    splitting admin, attester and treasury into three keys, which the deployment now
    does.
+9. **The sender's quote screen showed the amount ten million times too large.**
+   `quote.amount` and `quote.clientRate` are stroops — the same fixed point the
+   contract carries — and the screen grouped them with `formatRate`, which reads a
+   decimal string. A 40 USD transfer rendered as *You send 400,000,000 USD*. Every
+   other screen uses `formatAmount` for stroop values, so the formatter was never
+   wrong; which formatter a screen reaches for is what no test asserted, and the
+   suite covers the modules rather than the wiring. Found by capturing the screen
+   for the [pitch video](#pitch-video) and reading the figure back off it.
 
 ---
 

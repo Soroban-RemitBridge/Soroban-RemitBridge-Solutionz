@@ -6,7 +6,7 @@ import { Banner, Button, Card, Field, KeyValue, Screen, StatusPill } from '@/com
 import { api } from '@/api/client';
 import type { Corridor, Preflight, Quote } from '@/api/types';
 import { generateClaimCode } from '@/lib/claim';
-import { formatRate, shortId } from '@/lib/format';
+import { formatAmount, formatRate, shortId } from '@/lib/format';
 import { colors, radius, spacing, typography } from '@/theme';
 import { LocalKeypairWallet } from '@/wallet/local-wallet';
 
@@ -182,13 +182,17 @@ export default function SenderScreen() {
           <Card title="Signed quote">
             <KeyValue
               label="You send"
-              value={`${formatRate(quote.amount)} ${selected?.sourceCurrency ?? ''}`.trim()}
+              // `amount` and `clientRate` are stroops — a fixed point with seven
+              // decimals, the same unit the contract carries. Grouping them with
+              // `formatRate` reads them as a decimal string and multiplies the
+              // figure a sender is asked to trust by ten million.
+              value={`${formatAmount(quote.amount)} ${selected?.sourceCurrency ?? ''}`.trim()}
             />
             <KeyValue
               label={`Recipient receives (${selected?.destCurrency ?? 'local'})`}
               value={formatRate(quote.totalDisplay)}
             />
-            <KeyValue label="Rate applied" value={`1 → ${formatRate(quote.clientRate)}`} />
+            <KeyValue label="Rate applied" value={`1 → ${formatAmount(quote.clientRate)}`} />
             <KeyValue
               label="Fees"
               value={`${formatRate(quote.feeDisplay)} ${selected?.destCurrency ?? ''}`.trim()}

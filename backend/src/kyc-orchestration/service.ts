@@ -6,6 +6,7 @@ import { conflict, providerUnavailable, validationFailed } from '../lib/errors.j
 import { logger } from '../lib/logger.js';
 import { keypairFromSecret } from '../soroban/rpc.js';
 import { publishAttestation, revokeAttestation } from '../soroban/contracts.js';
+import { HttpIdVerificationProvider } from './http-provider.js';
 import { MockIdVerificationProvider } from './mock-provider.js';
 import {
   attestationHashOf,
@@ -39,14 +40,39 @@ export function getProvider(id: string = env.KYC_PROVIDER): IdVerificationProvid
     case 'mock':
       providerCache.set(id, new MockIdVerificationProvider());
       break;
+    case 'http': {
+      const baseUrl = env.KYC_PROVIDER_BASE_URL;
+      if (baseUrl === undefined) {
+        // Boot error rather than a per-request failure: a service that starts up
+        // configured for a real provider it cannot reach would accept KYC
+        // submissions and fail them one at a time.
+        throw new Error(
+          'KYC_PROVIDER=http requires KYC_PROVIDER_BASE_URL. Set it to the provider\'s API root.',
+        );
+      }
+      providerCache.set(
+        id,
+        new HttpIdVerificationProvider({
+          baseUrl,
+          ...(env.KYC_PROVIDER_API_KEY !== undefined
+            ? { apiKey: env.KYC_PROVIDER_API_KEY }
+            : {}),
+          ...(env.KYC_PROVIDER_WEBHOOK_SECRET !== undefined
+            ? { webhookSecret: env.KYC_PROVIDER_WEBHOOK_SECRET }
+            : {}),
+        }),
+      );
+      break;
+    }
     case 'sumsub':
     case 'onfido':
-      // The seam is real; the adapter is not written yet. Throwing a *named*
-      // error here rather than falling back to the mock is the point: silently
-      // downgrading to a mock provider in a compliance path would mean shipping
-      // unverified transfers under a production-looking config.
+      // Throwing a *named* error here rather than falling back to the mock is the
+      // point: silently downgrading to a mock provider in a compliance path would
+      // mean shipping unverified transfers under a production-looking config.
       throw new Error(
-        `Provider "${id}" is not implemented. Provide an adapter implementing IdVerificationProvider and register it here.`,
+        `No ${id}-specific adapter is shipped. Set KYC_PROVIDER=http and KYC_PROVIDER_BASE_URL ` +
+          `to the vendor's API root — see kyc-orchestration/http-provider.ts for the contract ` +
+          `it must speak — or add an adapter implementing IdVerificationProvider here.`,
       );
     default:
       throw new Error(`Unknown KYC provider: ${id}`);

@@ -32,9 +32,22 @@ const envSchema = z.object({
   OPERATOR_SECRET_KEY: z.string().startsWith('S', 'expected a secret (S...) key'),
   TREASURY_PUBLIC_KEY: z.string().startsWith('G', 'expected a public (G...) key'),
 
-  KYC_PROVIDER: z.enum(['mock', 'sumsub', 'onfido']).default('mock'),
+  /**
+   * `mock` is the in-repo provider; `http` is the real one, speaking the REST
+   * contract documented in `kyc-orchestration/http-provider.ts`.
+   *
+   * `sumsub` and `onfido` remain in the enum so an existing deployment config
+   * does not start failing validation, but they resolve to a named error rather
+   * than silently falling back to the mock: quietly downgrading a compliance
+   * check is how unverified transfers get shipped under a production-looking
+   * config. Point `KYC_PROVIDER=http` at the vendor's base URL instead.
+   */
+  KYC_PROVIDER: z.enum(['mock', 'http', 'sumsub', 'onfido']).default('mock'),
+  /** Required when `KYC_PROVIDER=http`; validated in `assertProviderConfig`. */
+  KYC_PROVIDER_BASE_URL: z.string().url().optional(),
   KYC_PROVIDER_API_KEY: z.string().optional(),
   KYC_PROVIDER_WEBHOOK_SECRET: z.string().optional(),
+  KYC_PROVIDER_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   KYC_ATTESTATION_TTL_DAYS: z.coerce.number().int().positive().default(365),
 
   DEFAULT_SPREAD_BPS: z.coerce.number().int().min(0).max(2_000).default(75),

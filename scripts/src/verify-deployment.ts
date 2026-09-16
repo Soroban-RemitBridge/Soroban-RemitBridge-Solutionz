@@ -41,6 +41,8 @@ interface Addresses {
   network: string;
   token: string;
   admin: string;
+  /** Receives settlement fees. A distinct key from the admin in a real deployment. */
+  treasury: string;
   contracts: {
     agentRegistry: string;
     complianceHook: string;
@@ -157,7 +159,11 @@ async function main(): Promise<void> {
   record(
     'remit-escrow',
     'pays fees to the treasury in this file',
-    escrowConfig?.treasury === addresses.admin,
+    // Compared against the recorded treasury, not against the admin. Those two
+    // are distinct keys in a real deployment, and comparing to the admin made
+    // this check pass only while the deployment happened to use one key for
+    // both roles.
+    escrowConfig?.treasury === addresses.treasury,
   );
 
   const stats = await readContract(context, remitEscrow, 'escrow_stats', []);

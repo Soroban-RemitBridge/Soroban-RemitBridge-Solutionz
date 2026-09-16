@@ -42,6 +42,8 @@ Per-component detail, and the failures worth recognising, are in
 | API responses | Validated with a schema at the consumer boundary, and the schema is the list of what may be rendered. |
 | New dependency | Justify it in the commit. `npm audit` is a blocking gate, so a dependency with an advisory is a conversation. |
 | New env var | Added to the component's `.env.example`, and to CI's placeholder block if it is required at boot. |
+| A user-visible change | An entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) — added, changed, fixed or security, and one sentence on the effect rather than the mechanics. |
+| A change to a deployed contract | The contract's cost report before and after (`cargo test -p remit-escrow cost_report_hot_paths -- --nocapture`), because a fee regression is invisible otherwise. |
 
 ## Commit conventions
 

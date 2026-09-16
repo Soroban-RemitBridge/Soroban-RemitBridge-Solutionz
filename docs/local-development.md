@@ -14,12 +14,12 @@ reasons attached.
 | --- | --- | --- |
 | Node | 22+ (`.nvmrc`) | Backend, both frontends, deploy tooling |
 | Rust | stable (`rust-toolchain.toml`) | Contracts |
-| `wasm32-unknown-unknown` target | — | Building deployable contract Wasm |
+| `wasm32v1-none` target | — | Building deployable contract Wasm |
 | Docker | any recent | Postgres, and the full-stack compose file |
 | `stellar` CLI | optional | Inspecting a deployed contract by hand |
 
 ```bash
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32v1-none
 nvm use            # or: node --version  # expect v22.x
 ```
 

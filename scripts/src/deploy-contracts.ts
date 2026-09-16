@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,7 +45,13 @@ const CONTRACTS = [
   { name: 'remit-escrow', artifact: 'remit_escrow.wasm' },
 ] as const;
 
-const ARTIFACT_DIR = resolve(REPO_ROOT, 'contracts/target/wasm32-unknown-unknown/release');
+/**
+ * Must match `TARGET` in `scripts/build-contracts.sh`, which explains why the
+ * build uses `wasm32v1-none` rather than `wasm32-unknown-unknown`: the latter
+ * emits WebAssembly features Soroban's VM rejects, so a deploy from it fails at
+ * upload with an unhelpful parser error.
+ */
+const ARTIFACT_DIR = resolve(REPO_ROOT, 'contracts/target/wasm32v1-none/release');
 
 interface DeployedAddresses {
   network: string;
@@ -116,6 +122,19 @@ async function main(): Promise<void> {
   assertSafeTarget(context, env.STELLAR_NETWORK, force);
 
   const addressesPath = resolve(REPO_ROOT, 'deployed-addresses.json');
+
+  // The refusal the doc comment above promises. It was documented but not
+  // implemented, so a stray re-run silently created a second set of contracts
+  // and repointed this file at them. That is not recoverable in the direction
+  // that matters: an immutable contract cannot be undeployed, and by the time
+  // anyone notices, a backend may already be reading the new set.
+  if (!dryRun && !force && existsSync(addressesPath)) {
+    throw new Error(
+      `${addressesPath} already exists, so this deployment would create a *second* set ` +
+        'of contracts and repoint the backend at them. Deploying is not reversible. ' +
+        'Pass --force if that is intended, or move the existing file aside first.',
+    );
+  }
 
   /* ---------------------------------------------------------------- upload */
 

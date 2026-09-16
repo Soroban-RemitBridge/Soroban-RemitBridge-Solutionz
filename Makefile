@@ -36,7 +36,8 @@ install: ## Install dependencies for every Node component
 
 .PHONY: wasm-target
 wasm-target: ## Add the wasm32 target the contracts need
-	rustup target add wasm32-unknown-unknown
+	# wasm32v1-none, not wasm32-unknown-unknown: see scripts/build-contracts.sh.
+	rustup target add wasm32v1-none
 
 # ------------------------------------------------------------ contracts ----
 

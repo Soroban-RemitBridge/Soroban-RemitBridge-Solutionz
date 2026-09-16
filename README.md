@@ -283,7 +283,7 @@ a compliance check silently passes.
 
 ## Quick start
 
-Prerequisites: **Node 22+**, **Rust stable + `wasm32-unknown-unknown`**, Docker
+Prerequisites: **Node 22+**, **Rust stable + `wasm32v1-none`**, Docker
 (for Postgres), and optionally the `stellar` CLI.
 
 ### 1. Contracts

@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build:contracts": "bash ./build-contracts.sh",
+    "token:create": "tsx src/create-test-token.ts",
     "deploy": "tsx src/deploy-contracts.ts",
     "deploy:dry-run": "tsx src/deploy-contracts.ts --dry-run",
     "typecheck": "tsc --noEmit"

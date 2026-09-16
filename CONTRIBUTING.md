@@ -21,7 +21,7 @@ explaining this decision to someone whose money is in it".
 
 ```bash
 make install          # Node deps for every component
-make wasm-target      # rustup target add wasm32-unknown-unknown
+make wasm-target      # rustup target add wasm32v1-none
 make check            # typecheck + lint + test, everything
 ```
 

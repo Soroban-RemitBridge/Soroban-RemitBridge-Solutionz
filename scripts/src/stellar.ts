@@ -84,8 +84,15 @@ export function wasmHash(wasm: Buffer): string {
 
 /**
  * Build, simulate, sign, submit and wait for one transaction.
+ *
+ * Exported because the token setup needs the same path for a contract this file
+ * does not deploy (a Stellar Asset Contract, which the host creates from an asset
+ * preimage rather than from uploaded Wasm). Simulate → assemble → sign → submit →
+ * poll is not something to write twice: the simulation is what attaches the
+ * resource fees, and a second copy that forgot it would fail in a way that looks
+ * like a contract bug.
  */
-async function submit(
+export async function submitOperations(
   context: DeployContext,
   operations: xdr.Operation[],
   label: string,
@@ -155,7 +162,11 @@ export async function uploadWasm(
     return hash;
   }
 
-  await submit(context, [Operation.uploadContractWasm({ wasm })], `upload ${contractName}`);
+  await submitOperations(
+    context,
+    [Operation.uploadContractWasm({ wasm })],
+    `upload ${contractName}`,
+  );
   return hash;
 }
 
@@ -178,7 +189,7 @@ export async function deployContract(
     return placeholder;
   }
 
-  const result = await submit(
+  const result = await submitOperations(
     context,
     [
       Operation.createCustomContract({
@@ -218,7 +229,11 @@ export async function call(
     return undefined;
   }
 
-  const result = await submit(context, [new Contract(contractId).call(method, ...args)], name);
+  const result = await submitOperations(
+    context,
+    [new Contract(contractId).call(method, ...args)],
+    name,
+  );
   return result.returnValue;
 }
 

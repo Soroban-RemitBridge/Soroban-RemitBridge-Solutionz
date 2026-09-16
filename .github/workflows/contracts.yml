@@ -33,7 +33,7 @@ jobs:
       run:
         working-directory: contracts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The version here must match `rust-toolchain.toml`, which rustup treats as
       # authoritative for any `cargo` invocation inside the checkout. Pinning it
@@ -69,7 +69,7 @@ jobs:
       run:
         working-directory: contracts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -102,7 +102,7 @@ jobs:
           done
           cat target/wasm32v1-none/release/*.wasm | wc -c
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: contracts-wasm
           path: contracts/target/wasm32-unknown-unknown/release/*.wasm

@@ -22,6 +22,8 @@ use compliance_hook::ComplianceHookClient;
 use remit_interfaces::compliance::TierThresholds;
 use remit_interfaces::escrow::{EscrowError, TransferStatus, MAX_FEE_BPS};
 
+use std::println;
+
 use crate::{RemitEscrow, RemitEscrowClient};
 
 const DAY: u64 = 86_400;
@@ -867,4 +869,165 @@ fn rotation_hands_over_the_operator_key() {
     f.escrow.set_admin(&next);
     f.escrow.set_fee_bps(&50);
     assert_eq!(f.escrow.escrow_config().unwrap().fee_bps, 50);
+}
+
+/* ------------------------------------------------------------------ */
+/* cost report                                                         */
+/* ------------------------------------------------------------------ */
+
+/// Modelled resources of the *last* top-level invocation, as one table row.
+///
+/// A macro rather than a helper function on purpose: the resource and fee types
+/// live in `soroban-env-host`, which a contract crate does not depend on, and
+/// naming them in a signature would mean adding a dependency just to print
+/// numbers. Field access needs no import.
+macro_rules! cost_row {
+    ($entry:expr, $env:expr) => {{
+        let resources = $env.cost_estimate().resources();
+        let fee = $env.cost_estimate().fee();
+        // Rent is reported separately because it is a function of *time* — how
+        // many ledgers an entry was extended by, and when — rather than of the
+        // code path. Folding it into one total makes two rows that do the same
+        // amount of work look different, so the comparable number is the fee
+        // excluding rent.
+        let work = fee.instructions
+            + fee.read_entries
+            + fee.write_entries
+            + fee.read_bytes
+            + fee.write_bytes
+            + fee.contract_events;
+        let rent = fee.persistent_entry_rent + fee.temporary_entry_rent;
+        println!(
+            "| {:<18} | {:>9} | {:>8} | {:>6} | {:>7} | {:>8} | {:>7} | {:>8} | {:>9} |",
+            $entry,
+            resources.instructions,
+            resources.mem_bytes,
+            resources.read_entries,
+            resources.write_entries,
+            resources.read_bytes + resources.write_bytes,
+            resources.contract_events_size_bytes,
+            work,
+            rent,
+        );
+    }};
+}
+
+/// Cost report for the entry points that move money.
+///
+/// This is a **measurement, not an assertion**. Pinning instruction counts as
+/// literals would turn every dependency bump into a red build without saying
+/// whether anything got worse, so the numbers are printed for a reviewer to
+/// compare across a change — the point is that a fee claim can be checked rather
+/// than believed.
+///
+/// Each scenario asserts its own effect before reporting, so a row cannot be a
+/// measurement of a call that quietly failed and cost nothing.
+///
+/// Two things this does not model, and which a real transaction pays anyway:
+/// Wasm instantiation and execution (the harness invokes a native test contract,
+/// not the uploaded Wasm), and transaction-size fees. Both are constant per
+/// entry point, so they shift every row equally.
+#[test]
+fn cost_report_hot_paths() {
+    println!();
+    println!("| Entry point        | insns     | mem B    | r-ents | w-ents  | ldg B   | evt B   | fee*    | rent     |");
+    println!("| ------------------ | --------- | -------- | ------ | ------- | ------- | ------- | ------- | -------- |");
+    println!("(*fee excluding rent, in stroops: instructions + entries + bytes + events)");
+
+    // Note the ordering rule this report depends on: the host meters the
+    // *outermost* invocation only, so a row must be read immediately after the
+    // call it describes. Any intervening contract call — including a token
+    // `balance` read in an assertion — becomes the metered invocation instead,
+    // and the row silently describes that call. Hence: measure, then assert.
+
+    // 1. create_transfer: compliance gate + volume commit + token pull + writes.
+    {
+        let f = setup();
+        let sender = Address::generate(&f.env);
+        fund(&f, &sender, 10_000);
+        attest_sender(&f, &sender);
+        let id = create(&f, &sender);
+        cost_row!("create_transfer", f.env);
+        assert_eq!(
+            f.escrow.get_transfer(&id).unwrap().status,
+            TransferStatus::Pending
+        );
+    }
+
+    // 2. claim_transfer: sha256 + registry call + two token transfers + write.
+    {
+        let f = setup();
+        let sender = Address::generate(&f.env);
+        fund(&f, &sender, 10_000);
+        attest_sender(&f, &sender);
+        let agent = onboard_agent(&f, 5_000);
+        let id = create(&f, &sender);
+        f.escrow
+            .claim_transfer(&agent, &id, &BytesN::from_array(&f.env, &CLAIM_CODE));
+        cost_row!("claim_transfer", f.env);
+        let fee = AMOUNT * i128::from(FEE_BPS) / 10_000;
+        // The agent's bond is held by the registry, so what it holds now is the
+        // payout alone. The fee must have gone to the treasury, not stayed here.
+        assert_eq!(balance(&f, &agent), AMOUNT - fee);
+        assert_eq!(balance(&f, &f.treasury), fee);
+    }
+
+    // 3. refund_expired: permissionless, one token transfer, one write.
+    {
+        let f = setup();
+        let sender = Address::generate(&f.env);
+        fund(&f, &sender, 10_000);
+        attest_sender(&f, &sender);
+        let id = create(&f, &sender);
+        f.env.ledger().set_timestamp(now(&f) + 8 * DAY);
+        f.escrow.refund_expired(&id);
+        cost_row!("refund_expired", f.env);
+        assert_eq!(balance(&f, &sender), 10_000);
+    }
+
+    // 4. cancel_transfer: sender-authenticated, one token transfer, one write.
+    {
+        let f = setup();
+        let sender = Address::generate(&f.env);
+        fund(&f, &sender, 10_000);
+        attest_sender(&f, &sender);
+        let id = create(&f, &sender);
+        f.escrow.cancel_transfer(&sender, &id);
+        cost_row!("cancel_transfer", f.env);
+        assert_eq!(balance(&f, &sender), 10_000);
+    }
+
+    // 5. The read every claim starts from: instance config plus one record, and
+    // no writes at all.
+    {
+        let f = setup();
+        let sender = Address::generate(&f.env);
+        fund(&f, &sender, 10_000);
+        attest_sender(&f, &sender);
+        let id = create(&f, &sender);
+        let transfer = f.escrow.get_transfer(&id);
+        cost_row!("get_transfer", f.env);
+        assert!(transfer.is_some());
+    }
+
+    // 6. quote_claim: what the agent app calls before it counts out cash.
+    {
+        let f = setup();
+        let sender = Address::generate(&f.env);
+        fund(&f, &sender, 10_000);
+        attest_sender(&f, &sender);
+        let id = create(&f, &sender);
+        let quote = f.escrow.quote_claim(&id);
+        cost_row!("quote_claim", f.env);
+        assert_eq!(quote.payout, AMOUNT - AMOUNT * i128::from(FEE_BPS) / 10_000);
+    }
+
+    // 7. A row with nothing else on the call stack, as a reference point for
+    // what the floor looks like.
+    {
+        let f = setup();
+        let _ = f.escrow.transfer_count();
+        cost_row!("transfer_count", f.env);
+    }
+    println!();
 }

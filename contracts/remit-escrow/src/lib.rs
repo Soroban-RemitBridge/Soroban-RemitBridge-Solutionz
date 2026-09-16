@@ -75,6 +75,12 @@
 //! components that change on regulatory and commercial timescales, none of which
 //! should require redeploying the contract that custodies user funds.
 
+// The crate is `no_std`, so `std` is not in scope by default. The test build is
+// the exception: it runs on the host, and the cost report in `test.rs` prints a
+// table a reviewer reads from CI output.
+#[cfg(test)]
+extern crate std;
+
 mod escrow;
 mod events;
 mod storage;

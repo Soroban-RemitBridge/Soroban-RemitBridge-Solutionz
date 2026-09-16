@@ -1,0 +1,21 @@
+{
+  /*
+   * Compiles the deploy-time seed next to the application.
+   *
+   * `tsconfig.build.json` emits `src/` only, because the API and the indexer are
+   * all that a runtime needs. The seed is different: it is the one piece of the
+   * read model that has to run *inside* the deployment, where there is no
+   * checkout, no `tsx` (a dev dependency) and no way to reach the database from a
+   * laptop. Emitting it to `dist-seed/` keeps the two build outputs separate, so a
+   * change to one cannot silently alter the other's layout.
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-seed",
+    "rootDir": ".",
+    "sourceMap": true,
+    "declaration": false
+  },
+  "include": ["src/**/*.ts", "prisma/**/*.ts"],
+  "exclude": ["node_modules", "dist", "dist-seed", "tests"]
+}

@@ -37,6 +37,14 @@ services:
   # The container applies the schema before it starts serving: its entrypoint runs
   # `prisma migrate deploy` against `prisma/migrations/` and exits non-zero if that
   # fails, so the API never serves a request against a schema it does not match.
+  #
+  # It then seeds the read model (`SEED_ON_DEPLOY`), because the network
+  # configuration the console and the quoting service read lives in the database
+  # and nothing else writes it. The seed is idempotent and reads the same object
+  # the contracts were deployed from, passed as `DEPLOY_CONFIG_JSON` — a container
+  # built from `backend/` has no checkout to read `scripts/config/*.json` from.
+  # Set that value from `deployments/testnet.json`'s `regions` and `corridors`, and
+  # leave the worker unseeded so only one process writes these rows.
   - type: web
     name: remitbridge-api
     runtime: docker
@@ -96,6 +104,11 @@ services:
         value: https://horizon-testnet.stellar.org
       - key: SDEX_ASSETS
         value: '{"USD":"USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN","XLM":"native"}'
+      # Seed regions and corridors from `DEPLOY_CONFIG_JSON` on every boot.
+      - key: SEED_ON_DEPLOY
+        value: 'true'
+      - key: DEPLOY_CONFIG_JSON
+        sync: false
 
   # -------------------------------------------------------------- indexer ----
   # Its own service, not a thread inside the API: a crashed indexer must not take

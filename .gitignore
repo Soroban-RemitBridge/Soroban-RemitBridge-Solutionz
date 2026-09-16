@@ -24,6 +24,7 @@ pnpm-debug.log*
 .next/
 out/
 dist/
+dist-seed/
 build/
 coverage/
 .vitest/

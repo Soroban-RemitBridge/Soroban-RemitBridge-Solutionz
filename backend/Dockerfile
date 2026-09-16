@@ -44,6 +44,12 @@ RUN npm ci --omit=dev && npx prisma generate && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
 
+# The deploy-time seed, compiled separately (see `tsconfig.seed.json`). It exists
+# so the read model can be populated from inside the private network: a hosted
+# database is not reachable from a developer's machine, and shipping a seed that
+# can only be run locally means every deployment starts with an empty console.
+COPY --from=build /app/dist-seed ./dist-seed
+
 # The entrypoint, copied explicitly. It is NOT part of the build context's
 # `.dockerignore`-excluded set, and forgetting it fails at container start rather
 # than at build time, which is exactly the kind of gap a smoke test catches and a

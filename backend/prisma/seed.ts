@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { z } from 'zod';
-
+import {
+  type DeployConfig,
+  deployConfigSchema,
+  describeIssues,
+  parseDeployConfigJson,
+} from '../src/config/deploy-config.js';
 import { prisma } from '../src/db/client.js';
 import { logger } from '../src/lib/logger.js';
 
@@ -20,54 +24,40 @@ import { logger } from '../src/lib/logger.js';
  * `syncCorridorConfig` reconciles it — but starting from the deployment config
  * means the common case needs no reconciliation at all.
  *
- * Idempotent: safe to run repeatedly.
+ * The config comes from `DEPLOY_CONFIG_JSON` when that is set, and from a file on
+ * disk otherwise. A container built from `backend/` has no checkout to read a path
+ * from, so a hosted deployment passes the same object it deployed the contracts
+ * from as data.
+ *
+ * Idempotent: safe to run repeatedly, which is what lets the container run it on
+ * every boot.
  */
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 
-const regionSchema = z.object({
-  id: z.string(),
-  displayName: z.string(),
-  countryCode: z.string(),
-  currency: z.string(),
-  minBond: z.string(),
-  maxAgents: z.number(),
-  utilizationCapBps: z.number(),
-});
+function loadConfig(): DeployConfig {
+  // A deployed container has no repository checkout to read a path from — the
+  // image is built from `backend/` alone — so the configuration can also arrive
+  // as data. It is the same object as the file, which is what keeps the seeded
+  // bands and the deployed bands the same numbers.
+  const inline = parseDeployConfigJson(process.env['DEPLOY_CONFIG_JSON']);
+  if (inline) {
+    logger.info('seeding from DEPLOY_CONFIG_JSON');
+    return inline;
+  }
 
-const corridorSchema = z.object({
-  id: z.string(),
-  regionId: z.string(),
-  sourceCurrency: z.string(),
-  destCurrency: z.string(),
-  tier1Max: z.string(),
-  tier2Max: z.string(),
-  dailyLimit: z.string(),
-  spreadBps: z.number(),
-});
-
-const configSchema = z.object({
-  regions: z.array(regionSchema),
-  corridors: z.array(corridorSchema),
-});
-
-function loadConfig(): z.infer<typeof configSchema> {
   const configured = process.env['DEPLOY_CONFIG'] ?? 'scripts/config/testnet.json';
   const candidates = [configured, 'scripts/config/testnet.example.json'];
 
   for (const candidate of candidates) {
     const path = resolve(REPO_ROOT, candidate);
     try {
-      const parsed = configSchema.safeParse(JSON.parse(readFileSync(path, 'utf8')));
+      const parsed = deployConfigSchema.safeParse(JSON.parse(readFileSync(path, 'utf8')));
       if (parsed.success) {
         logger.info({ path: candidate }, 'seeding from deployment config');
         return parsed.data;
       }
-      throw new Error(
-        `Deployment config at ${path} is invalid: ${parsed.error.issues
-          .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-          .join('; ')}`,
-      );
+      throw new Error(`Deployment config at ${path} is invalid: ${describeIssues(parsed.error)}`);
     } catch (cause) {
       // A missing real config is expected on a fresh clone; the example is a
       // legitimate fallback because it describes the same network.

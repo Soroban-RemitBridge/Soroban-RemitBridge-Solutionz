@@ -20,6 +20,25 @@
 # not start. A service running against a schema it does not match is far worse
 # than a service that is down and says why.
 
+#
+# Then, optionally, seed the read model:
+#
+#   * `SEED_ON_DEPLOY=true` → run the compiled seed (`dist-seed/prisma/seed.js`)
+#     after the schema step and before the process starts. This is off by default
+#     because seeding is a deployment decision, not a runtime one — but a hosted
+#     deployment turns it on, because otherwise the console has no corridors to
+#     show: the network configuration lives in the database, and nothing else
+#     writes it.
+#
+#   * The seed is idempotent (upserts keyed by id), so re-running it on every boot
+#     reconciles the read model with the config rather than duplicating rows.
+#
+#   * It reads `DEPLOY_CONFIG_JSON` when set, falling back to the config file on
+#     disk. A container has no checkout, so a deployment passes the same object it
+#     deployed the contracts from. If it is set but invalid, the seed exits
+#     non-zero and `set -e` stops the boot: an empty console is a visible problem,
+#     a *wrong* corridor limit is not.
+
 set -e
 
 MIGRATIONS_DIR="prisma/migrations"
@@ -37,5 +56,15 @@ else
   echo "[migrate] ------------------------------------------------------------"
   npx prisma db push --skip-generate
 fi
+
+case "${SEED_ON_DEPLOY:-false}" in
+  true|1|yes)
+    echo "[seed] SEED_ON_DEPLOY=${SEED_ON_DEPLOY}; seeding the read model"
+    node dist-seed/prisma/seed.js
+    ;;
+  *)
+    echo "[seed] skipped (set SEED_ON_DEPLOY=true to seed the read model)"
+    ;;
+esac
 
 exec "$@"

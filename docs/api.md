@@ -149,8 +149,9 @@ served with a staleness note.
 `oracleSource` names the feed, and it names the venue rather than the class: the
 DEX source reports `horizon-sdex:USDC:G…->XLM`, so a rate carries the pair that
 produced it. The static source labels itself `static-config`, and that label
-reaches the console and the audit log, so a placeholder rate can never be
-mistaken for a market one. `PRICE_SOURCE` selects between them; when the DEX has
+is stored on the `Quote` row and returned to the client, so a placeholder rate
+can never be mistaken for a market one — including after the fact, by whoever
+reads the quote back. `PRICE_SOURCE` selects between them; when the DEX has
 no configured asset for a corridor's currency, the quote fails with a 503 naming
 the missing currency rather than falling back to the placeholder.
 

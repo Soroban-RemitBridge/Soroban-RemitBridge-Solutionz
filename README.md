@@ -210,11 +210,15 @@ sides safe from the other's counterparty risk:
   API is how they are used. What is not claimed is any vendor-specific behaviour
   beyond the documented request/response contract.
 - **The operator console's accounts are configuration, not identity.** It now
-  requires a credential — signed session cookie, per-action role checks, and the
-  operator's own address written into the audit trail — but there is no user
-  table and no SSO. Operators live in `OPERATOR_ACCOUNTS`, so onboarding one is a
-  deploy and the session carries the roles it was issued with until it expires.
-  SSO is roadmap item 1, and the console remains `noindex` either way.
+  requires a credential — a signed session cookie, per-action role checks, and the
+  operator's own address written into the record an action produces (a float
+  top-up's `requestedBy` / `approvedBy`) — but there is no user table and no SSO.
+  Operators live in `OPERATOR_ACCOUNTS`, so onboarding one is a deploy and the
+  session carries the roles it was issued with until it expires. The append-only
+  `AuditLog` table is still defined with no writer, so attribution sits on the
+  affected rows rather than in one chronological trail — see
+  [docs/data-model.md](docs/data-model.md). SSO is roadmap item 1, and the console
+  remains `noindex` either way.
 - **The price source is real but the corridor mapping is not.** `PRICE_SOURCE`
   selects between a live Stellar DEX read through Horizon and a static
   placeholder. The DEX source refuses — by name — when a currency has no asset
@@ -619,8 +623,11 @@ check rather than two that drift.
   is the wrong direction for an endpoint that moves float.
 - **Audit attribution** is overwritten from the session. A browser that posts
   `requestedBy: someone-else@example.com` has that field deleted and rewritten
-  with the signed-in operator's address, so the log records who acted rather than
-  who the client claimed.
+  with the signed-in operator's address, so the record names the operator who
+  acted rather than whoever the client claimed — on the rows an action produces.
+  There is no append-only trail yet: `AuditLog` exists in the schema and has no
+  writer, which is a coverage gap rather than a credibility one, and it is
+  recorded as one.
 - **What this is not.** There is no SSO, no MFA and no session revocation list —
   a cookie is valid for its whole TTL, and removing an operator stops the next
   login rather than an existing cookie. The login throttle is in-process and
@@ -652,11 +659,12 @@ here.
 **Before this could serve real customers**
 
 1. **Replace the operator accounts with an identity provider.** Authentication,
-   per-action roles and per-person audit attribution all landed — sessions are
-   signed cookies, five permissions are enforced server-side, and the audit trail
-   carries the operator's own address. What remains is the identity layer: SSO,
-   MFA, and a session store that can revoke before expiry, so onboarding a person
-   is not a deploy.
+   per-action roles and per-person attribution all landed — sessions are signed
+   cookies, five permissions are enforced server-side, and the record an action
+   produces carries the operator's own address. What remains is the identity
+   layer (SSO, MFA, and a session store that can revoke before expiry, so
+   onboarding a person is not a deploy) and a writer for `AuditLog`, so an
+   action's actor is recoverable even when the action produces no such row.
 2. **Point the KYC provider at a real vendor.** The `http` adapter is real,
    signature-verifying and fails closed, but no live vendor account has been
    called; a vendor whose API differs from the documented contract needs its

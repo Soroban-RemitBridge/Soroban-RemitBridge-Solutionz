@@ -175,8 +175,10 @@ and a badly-signed webhook, every one of which must refuse.
 Reads agent exposure from the projection, classifies float health into
 `FLOAT_LOW`, `COLLATERAL_TIGHT` and `POOL_UTILIZATION_HIGH`, and raises alerts.
 Top-ups are **proposed, decided and executed as three separate operations**: a
-human approves, a machine executes, and the audit log records both. Collapsing
-them would let an automated sweep move float that nobody approved.
+human approves, a machine executes, and the request row carries both identities —
+the proposer and the approver, taken from the operator's session rather than from
+the request body. Collapsing them would let an automated sweep move float that
+nobody approved.
 
 ### `quoting-service`
 

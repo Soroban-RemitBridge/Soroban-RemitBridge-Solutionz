@@ -192,8 +192,8 @@ control, not as evidence a counterparty can check independently.
 `PRICE_SOURCE=horizon` reads the Stellar DEX through Horizon's
 `/paths/strict-send`, which returns the *executable* rate for a probe size
 following whatever path the market uses. `PRICE_SOURCE=static`
-(`StaticPriceSource`) labels every tick `static-config`, and the label reaches the
-operator console and the audit log. `PRICE_SOURCE` defaults to `static`,
+(`StaticPriceSource`) labels every tick `static-config`, the label is stored on
+the `Quote` row it produces and returned to the console. `PRICE_SOURCE` defaults to `static`,
 because defaulting to a live network read would make a fresh clone's behaviour
 depend on whether Horizon happens to be reachable.
 
@@ -243,11 +243,15 @@ rather than forwarded). There is still no user table and no SSO.
 valid for its whole TTL because there is no store to revoke it from — rotating
 `OPERATOR_SESSION_SECRET` ends every session at once, and that is the only lever.
 That is why the TTL defaults to one shift. What this did fix is the part that
-mattered for money: a credential is now required at all, and the audit log
-records the signed-in operator's own address, overwritten from the session rather
-than taken from the request body. It is still marked `noindex` and still belongs
-behind network-level access control as a second layer; the difference is that the
-second layer is no longer the only one.
+mattered for money: a credential is now required at all, and the record an action
+produces carries the signed-in operator's own address, overwritten from the
+session rather than taken from the request body. It is still marked `noindex` and
+still belongs behind network-level access control as a second layer; the
+difference is that the second layer is no longer the only one.
+
+What attribution does *not* yet have is a single place to read it: `AuditLog` is
+defined in the schema with no writer, so an action's actor is recoverable from
+the row it changed, and actions that change no such row record no actor at all.
 
 ### Frontend correctness is mostly about refusal
 

@@ -153,8 +153,10 @@ config changes if it was not recorded at the time.
 `decisionNote`, `txHash` and `failureReason` all retained.
 
 The four states are the point: approval and execution are separate human and
-machine steps, and the audit trail has to show both. Collapsing them would let an
-automated sweep move float that nobody approved, and there would be no record
+machine steps, and the row has to show both — `requestedBy` is the operator who
+proposed it and `approvedBy` the operator who decided, both written from the
+session by the console rather than accepted from the request body. Collapsing the
+steps would let an automated sweep move float that nobody approved, with no field
 distinguishing it from an approved move.
 
 ---

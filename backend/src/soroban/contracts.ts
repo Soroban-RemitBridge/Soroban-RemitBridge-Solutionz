@@ -25,6 +25,22 @@ const vec = (values: xdr.ScVal[]): xdr.ScVal =>
   xdr.ScVal.scvVec(values);
 
 /**
+ * Encode a unit variant of a `#[contracttype]` enum.
+ *
+ * A Rust enum with unit variants crosses the ABI as a **one-element vector of
+ * the case name**, not as the bare `Symbol` its name suggests — the XDR union
+ * the contract sees is `ScVal::Vec([Symbol("Standard")])`. This was verified
+ * against a deployment, not assumed: `publish_attestation` with a bare
+ * `Symbol` traps inside the generated entry point (`Error(WasmVm,
+ * InvalidAction)`, `UnreachableCodeReached`) because the argument fails to
+ * decode, and the same call with the vector form succeeds. The trap names
+ * neither the argument nor the caller, so getting this wrong is expensive to
+ * diagnose — which is why it is a helper here rather than inlined at the call
+ * site.
+ */
+const enumCase = (variant: string): xdr.ScVal => vec([sym(variant)]);
+
+/**
  * Encode a `#[contracttype]` struct as a Soroban map.
  *
  * Two things have to be right here and `nativeToScVal`'s defaults get both of
@@ -68,6 +84,32 @@ export interface PublishAttestationInput {
 }
 
 /**
+ * The argument vector for `publish_attestation`, exported so it can be tested.
+ *
+ * Separated from the call so the encoding of the `tier` enum — the one argument
+ * whose correct form is not guessable — can be asserted without a network. That
+ * is worth the extraction: the wrong encoding does not fail as a type error, it
+ * traps inside the contract and surfaces as `Error(WasmVm, InvalidAction)` with
+ * no mention of the argument.
+ */
+export function publishAttestationArgs(
+  input: Omit<PublishAttestationInput, 'attester'> & { attesterPublicKey: string },
+): xdr.ScVal[] {
+  return [
+    address(input.attesterPublicKey),
+    address(input.subject),
+    // Not `sym(input.tier)`: see `enumCase`. The variant ordinal is also wrong —
+    // the contract decodes the case name, and rejects both the ordinal and the
+    // bare symbol.
+    enumCase(input.tier),
+    bytes32(input.attestationHash),
+    sym(input.regionId),
+    sym(input.providerId),
+    u64(input.expiresAt),
+  ];
+}
+
+/**
  * Publish a verification result. Only the hash crosses this boundary — the
  * document that produced it stays in Postgres.
  */
@@ -78,17 +120,10 @@ export function publishAttestation(
     contractId: contracts.complianceHook,
     method: 'publish_attestation',
     signer: input.attester,
-    args: [
-      address(input.attester.publicKey()),
-      address(input.subject),
-      // Soroban enums are represented by their variant name as a `Symbol`, not
-      // by their ordinal. Passing `1` here silently encodes an invalid union.
-      sym(input.tier),
-      bytes32(input.attestationHash),
-      sym(input.regionId),
-      sym(input.providerId),
-      u64(input.expiresAt),
-    ],
+    args: publishAttestationArgs({
+      ...input,
+      attesterPublicKey: input.attester.publicKey(),
+    }),
   });
 }
 

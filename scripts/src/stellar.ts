@@ -130,6 +130,40 @@ export async function submitOperations(
   return { hash: sent.hash, returnValue };
 }
 
+/**
+ * A one-line diagnosis of a failed transaction, from its diagnostic events.
+ *
+ * The events are base64 XDR, and decoding them properly means the whole
+ * `xdr` machinery for a message a human reads once. What is worth extracting is
+ * the host's own summary strings, which appear as raw ASCII inside the encoded
+ * event — so this looks for those and reports what it recognises.
+ */
+function describeFailure(response: { diagnosticEventsXdr?: xdr.DiagnosticEvent[] }): string {
+  const events = response.diagnosticEventsXdr ?? [];
+  const text = events
+    .map((event) => {
+      const encoded = event.toXDR();
+      const bytes = Buffer.isBuffer(encoded) ? encoded : Buffer.from(String(encoded), 'base64');
+      return bytes.toString('latin1');
+    })
+    .join('\n');
+
+  const authFailure = /failed account authentication|require_auth/.test(text);
+  const contractError = /Error\(Contract, #(\d+)\)/.exec(text);
+
+  if (authFailure) {
+    return (
+      '  the contract rejected the signer: a `require_auth` in this call was not satisfied.\n' +
+      "  Submit it with the account the call names — a transfer's sender, an agent being\n" +
+      '  registered, the operator for an admin call — not with whichever key the context holds.'
+    );
+  }
+  if (contractError) {
+    return `  the contract refused: Error(Contract, #${contractError[1]}). See docs/contracts.md for the code.`;
+  }
+  return `  no diagnosis could be read from ${events.length} diagnostic event(s); inspect the hash above.`;
+}
+
 async function poll(
   context: DeployContext,
   hash: string,
@@ -141,7 +175,16 @@ async function poll(
       return { ledger: response.ledger };
     }
     if (response.status === rpc.Api.GetTransactionStatus.FAILED) {
-      throw new Error(`${label} failed on-chain: ${hash}`);
+      // "failed on-chain" plus a hash is not a diagnosis, and the two most common
+      // causes are indistinguishable from it: a contract-level refusal, and the
+      // *right contract* rejecting the wrong signer. The second is what happens
+      // when a call whose argument has `require_auth` is submitted by whatever
+      // key the context holds rather than by the account in the argument — a
+      // signature failure that reads exactly like a policy refusal.
+      //
+      // The diagnostic events carry the reason, so they are summarised here
+      // rather than left for a second tool run.
+      throw new Error(`${label} failed on-chain: ${hash}\n${describeFailure(response)}`);
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
@@ -286,4 +329,18 @@ export const scv = {
   u64: (value: number | bigint): xdr.ScVal => nativeToScVal(value, { type: 'u64' }),
   i128: (value: string): xdr.ScVal => nativeToScVal(BigInt(value), { type: 'i128' }),
   bool: (value: boolean): xdr.ScVal => nativeToScVal(value),
+  /**
+   * A unit variant of a `#[contracttype]` enum, such as `KycTier::Standard`.
+   *
+   * The encoding is a one-element vector of the case name — `ScVal::Vec([Symbol(
+   * "Standard")])` — and *not* the bare `Symbol` the name suggests. This is
+   * measured, not inferred: calling `publish_attestation` with a bare symbol
+   * traps in the contract's generated entry point with
+   * `Error(WasmVm, InvalidAction)` / `UnreachableCodeReached`, because the
+   * argument fails to decode, while the vector form is accepted. The same
+   * encoding is what the TypeScript SDK's `Spec.funcArgsToScVals` produces for
+   * a `scSpecUdtUnionCaseVoidV0`.
+   */
+  enumCase: (variant: string): xdr.ScVal =>
+    xdr.ScVal.scvVec([nativeToScVal(variant, { type: 'symbol' })]),
 };

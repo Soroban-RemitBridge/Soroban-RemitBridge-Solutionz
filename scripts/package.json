@@ -14,7 +14,8 @@
     "deploy": "tsx src/deploy-contracts.ts",
     "deploy:dry-run": "tsx src/deploy-contracts.ts --dry-run",
     "typecheck": "tsc --noEmit",
-    "verify": "tsx src/verify-deployment.ts"
+    "verify": "tsx src/verify-deployment.ts",
+    "smoke-test": "tsx src/smoke-test.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^17.1.0",

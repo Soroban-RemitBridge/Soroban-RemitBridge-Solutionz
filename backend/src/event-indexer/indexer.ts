@@ -12,10 +12,14 @@ import { decodeEvent, UndecodableEventError, type DecodedEvent, type RawContract
  *
  * Two design choices worth stating.
  *
- * **Every event is stored raw before it is projected.** `ChainEvent` is the
- * source of truth and `Transfer`, `Agent` and the pool snapshots are derived
- * views. That is what makes the read model rebuildable: a projection bug is fixed
- * by replaying, not by a migration with a backfill of unknown correctness.
+ * **`ChainEvent` is the source of truth; `Transfer`, `Agent` and the pool
+ * snapshots are derived views.** That is what makes the read model rebuildable: a
+ * projection bug is fixed by replaying, not by a migration with a backfill of
+ * unknown correctness. The audit row is written *after* the projection, not
+ * before, because it carries a foreign key into the table the projection creates
+ * — the ordering is explained at `persist`. Every projection is an upsert or an
+ * idempotent update, so a crash between the two steps re-converges on the next
+ * tick rather than double-counting.
  *
  * **The cursor advances only after the whole batch is written.** A crash
  * mid-batch re-processes events on restart, which is safe because every write is
@@ -164,6 +168,16 @@ async function persist(raw: RawContractEvent, decoded: DecodedEvent): Promise<bo
   });
   if (existing) return false;
 
+  // Project *before* recording the audit row.
+  //
+  // `ChainEvent.transferId` is a foreign key into `Transfer`, and for a
+  // `transfer.created` event the row it points at is created by this very
+  // projection. Inserting the audit row first therefore failed with
+  // `ChainEvent_transferId_fkey`, which took down not just that event but the
+  // indexer loop — and because the row was never written, the cursor guard did
+  // not stop the same event from failing again on the next tick.
+  const changed = await project(raw, decoded);
+
   await prisma.chainEvent.create({
     data: {
       contractId: raw.contractId,
@@ -173,12 +187,25 @@ async function persist(raw: RawContractEvent, decoded: DecodedEvent): Promise<bo
       txHash: raw.txHash,
       payload: asJson(decoded.payload),
       rawXdr: env.INDEXER_STORE_RAW_XDR ? JSON.stringify({ topic: raw.topicXdr, value: raw.valueXdr }) : null,
-      transferId: decoded.transferId,
+      // Linked only when there is a row to link to. A settlement event can
+      // arrive with no local transfer — the indexer started after the event it
+      // settles — and `projectTransferSettled` already records that as a warning
+      // rather than inventing a transfer. A dangling reference here would fail the
+      // insert and lose the event entirely, which is the opposite of what the raw
+      // log is for.
+      transferId: await linkableTransferId(decoded.transferId),
       occurredAt: new Date(raw.closedAt),
     },
   });
 
-  return project(raw, decoded);
+  return changed;
+}
+
+/** The transfer id to attach to an event, or null when no such row exists. */
+async function linkableTransferId(id: bigint | null): Promise<bigint | null> {
+  if (id === null) return null;
+  const transfer = await prisma.transfer.findUnique({ where: { id }, select: { id: true } });
+  return transfer?.id ?? null;
 }
 
 async function project(raw: RawContractEvent, decoded: DecodedEvent): Promise<boolean> {

@@ -54,6 +54,26 @@ jobs:
         working-directory: scripts
         run: npm run typecheck
 
+      # A step of its own, because the runner reads `$GITHUB_ENV` *between* steps.
+      # Generating these and running the dry run in one step left the dry run with
+      # an empty environment -- it reported all four variables as required and
+      # exited 1 -- so the job failed on its first run without ever exercising the
+      # dry run it exists to exercise.
+      - name: Generate throwaway credentials
+        working-directory: scripts
+        run: |
+          set -euo pipefail
+          # Generated per run: no key material is stored in the repository, not
+          # even a testnet one. A committed key is a key that gets reused.
+          node - <<'NODE' >> "$GITHUB_ENV"
+          const { Keypair, StrKey } = require('@stellar/stellar-sdk');
+          const admin = Keypair.random();
+          console.log(`ADMIN_SECRET_KEY=${admin.secret()}`);
+          console.log(`TREASURY_PUBLIC_KEY=${admin.publicKey()}`);
+          console.log(`ATTESTER_PUBLIC_KEY=${admin.publicKey()}`);
+          console.log(`TOKEN_CONTRACT=${StrKey.encodeContract(Buffer.alloc(32, 7))}`);
+          NODE
+
       # A dry run loads the real Wasm, derives valid placeholder addresses and
       # runs the genuine argument encoding, so this exercises the cross-contract
       # wiring — the part most likely to be wrong — without spending anything.
@@ -64,16 +84,4 @@ jobs:
           SOROBAN_RPC_URL: https://soroban-testnet.stellar.org
           STELLAR_NETWORK_PASSPHRASE: Test SDF Network ; September 2015
           DEPLOY_CONFIG: scripts/config/testnet.example.json
-        run: |
-          set -euo pipefail
-          # Generated per run: no key material is stored in the repository, not
-          # even a testnet one. A committed key is a key that gets reused.
-          node - <<'NODE' > "$GITHUB_ENV"
-          const { Keypair, StrKey } = require('@stellar/stellar-sdk');
-          const admin = Keypair.random();
-          console.log(`ADMIN_SECRET_KEY=${admin.secret()}`);
-          console.log(`TREASURY_PUBLIC_KEY=${admin.publicKey()}`);
-          console.log(`ATTESTER_PUBLIC_KEY=${admin.publicKey()}`);
-          console.log(`TOKEN_CONTRACT=${StrKey.encodeContract(Buffer.alloc(32, 7))}`);
-          NODE
-          npm run deploy:dry-run
+        run: npm run deploy:dry-run

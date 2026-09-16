@@ -35,6 +35,8 @@ playwright-report/
 test-results/
 blob-report/
 .playwright/
+# The signed-in state the setup project writes: a session cookie, and a real one.
+admin-web/playwright/.auth/
 
 # ---------- Expo / React Native ----------
 .expo/

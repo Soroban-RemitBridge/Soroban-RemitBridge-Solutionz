@@ -259,7 +259,7 @@ test.describe('liquidity', () => {
     // Approved is not executed. Nothing is drawn until the machine step runs.
     const approved = card(page, 'Approved, not yet executed');
     await expect(approved).toContainText('150.00');
-    await expect(approved).toContainText('operator-console');
+    await expect(approved).toContainText('ops@remitbridge.example');
     await expect(approved.getByRole('button', { name: 'Execute draw' })).toBeVisible();
 
     await expect(card(page, 'Recent requests')).toContainText('EXECUTED');

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { E2E_ADMIN } from './accounts';
 import { card, lastPost, postCount, setMode } from './harness';
 
 /**
@@ -47,9 +48,12 @@ test.describe('operator decisions', () => {
 
     const decision = await lastPost(request, `/agents/liquidity/top-ups/${PENDING_TOP_UP}/decision`);
     expect(decision, 'the decision must go to the request it was made about').toBeDefined();
+    // `approvedBy` is not sent by the browser at all any more; the proxy writes it
+    // from the session, which is why it matches the operator the suite signed in as
+    // rather than anything the form could have supplied.
     expect(decision?.body).toMatchObject({
       approved: true,
-      approvedBy: 'operator-console',
+      approvedBy: E2E_ADMIN.email,
       note: 'Within the region cap',
     });
 
@@ -158,7 +162,7 @@ test.describe('proposing a float top-up', () => {
       agentId: AGENT_LAGOS,
       regionId: 'NG_LAG',
       reason: 'Cash demand above forecast',
-      requestedBy: 'operator-console',
+      requestedBy: E2E_ADMIN.email,
     });
 
     // The decisive assertion in this file. `2500` would be a double by the time

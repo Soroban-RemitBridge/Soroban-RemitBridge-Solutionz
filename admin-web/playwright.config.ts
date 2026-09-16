@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
+import { E2E_SESSION_SECRET, OPERATOR_ACCOUNTS_JSON } from './e2e/accounts';
+
 /**
  * End-to-end configuration for the operator console.
  *
@@ -24,6 +26,15 @@ const APP_PORT = 3100;
 
 const STUB_URL = `http://127.0.0.1:${STUB_PORT}`;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
+
+/**
+ * Where the signed-in state is cached between the setup project and the specs.
+ *
+ * Signing in once and reusing the cookie is not only faster: it keeps the spec
+ * files about the console's behaviour. The sign-in flow itself is asserted in
+ * `e2e/auth.spec.ts`, which runs without this state on purpose.
+ */
+const AUTH_STATE = 'playwright/.auth/operator.json';
 
 export default defineConfig({
   testDir: './e2e',
@@ -51,10 +62,18 @@ export default defineConfig({
    */
   projects: [
     {
+      // Signs in once and writes the session cookie to `AUTH_STATE`. Every spec
+      // except the auth ones then starts authenticated.
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
+    },
+    {
       name: 'chromium',
+      dependencies: ['setup'],
       use: {
         browserName: 'chromium',
         viewport: { width: 1280, height: 900 },
+        storageState: AUTH_STATE,
       },
     },
   ],
@@ -78,6 +97,11 @@ export default defineConfig({
         // Inlined at build time, and asserted by the shell spec: an operator has
         // to be able to see which deployment they are looking at.
         NEXT_PUBLIC_ENVIRONMENT_LABEL: 'e2e',
+        // The console refuses every request without these, so the suite cannot
+        // start without them — which is itself the fail-closed behaviour, met on
+        // the first run rather than in production.
+        OPERATOR_SESSION_SECRET: E2E_SESSION_SECRET,
+        OPERATOR_ACCOUNTS: OPERATOR_ACCOUNTS_JSON,
       },
       reuseExistingServer: process.env['CI'] === undefined,
       timeout: 240_000,

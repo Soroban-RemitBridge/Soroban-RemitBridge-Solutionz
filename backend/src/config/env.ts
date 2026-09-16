@@ -54,6 +54,27 @@ const envSchema = z.object({
   QUOTE_TTL_SECONDS: z.coerce.number().int().min(5).max(600).default(45),
   QUOTE_SIGNING_SECRET_KEY: z.string().startsWith('S', 'expected a secret (S...) key'),
 
+  /**
+   * Which `PriceSource` the quoting service uses.
+   *
+   * `horizon` reads the Stellar DEX through Horizon and is what a real
+   * deployment runs. `static` is a placeholder for corridors with no market yet:
+   * it invents nothing, it labels every tick `static-config`, and the label
+   * reaches the quote, the audit log and the operator console.
+   */
+  PRICE_SOURCE: z.enum(['static', 'horizon']).default('static'),
+  HORIZON_URL: z.string().url().default('https://horizon-testnet.stellar.org'),
+  /**
+   * Currency → the Stellar asset the DEX trades it as, as JSON:
+   *
+   *   {"USD":"USDC:GA5Z…","NGN":"NGNT:GABR…","XLM":"native"}
+   *
+   * Required by `PRICE_SOURCE=horizon`, because Horizon prices assets, not
+   * currencies. A corridor whose destination currency has no asset configured
+   * cannot be priced, and the source refuses rather than guessing.
+   */
+  SDEX_ASSETS: z.string().optional(),
+
   INDEXER_START_LEDGER: z.union([z.literal('latest'), z.coerce.number().int().nonnegative()]).default('latest'),
   INDEXER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   INDEXER_STORE_RAW_XDR: z

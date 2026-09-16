@@ -2,6 +2,7 @@ import { env } from '../config/env.js';
 import { providerUnavailable } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 import { poolHealth } from '../soroban/contracts.js';
+import { HorizonDexPriceSource, parseSdexAssets } from './horizon-source.js';
 
 /**
  * Price oracle.
@@ -99,11 +100,36 @@ export function assertFresh(tick: RateTick, now = new Date()): void {
   }
 }
 
+/**
+ * Select the price source from configuration.
+ *
+ * `horizon` is the real one: it reads the Stellar DEX and prices each corridor
+ * against the assets the operator has configured in `SDEX_ASSETS`. `static`
+ * remains for corridors with no market yet, and says so at boot rather than
+ * only in the quote — a placeholder rate that is quiet about being one is the
+ * failure this source exists to avoid.
+ */
 export function buildDefaultSource(): PriceSource {
+  if (env.PRICE_SOURCE === 'horizon') {
+    const assets = parseSdexAssets(env.SDEX_ASSETS ?? '{}');
+    logger.debug(
+      { horizonUrl: env.HORIZON_URL, currencies: Object.keys(assets).sort() },
+      'price source selected',
+    );
+    return new HorizonDexPriceSource({
+      horizonUrl: env.HORIZON_URL,
+      assets,
+    });
+  }
+
   const configured = env.DEFAULT_SPREAD_BPS;
-  logger.debug({ spreadBps: configured }, 'price source selected');
+  logger.warn(
+    { spreadBps: configured },
+    'PRICE_SOURCE=static: quotes carry placeholder rates and do not reflect any market. ' +
+      'Set PRICE_SOURCE=horizon and SDEX_ASSETS to quote from the Stellar DEX.',
+  );
   return new StaticPriceSource({
-    // A placeholder until the corridor has a live feed; the static source
+    // A placeholder for a corridor with no live feed; the static source
     // announces itself as static in every tick it returns.
     'USD/NGN': 1_500n * RATE_SCALE,
     'USD/KES': 129n * RATE_SCALE,

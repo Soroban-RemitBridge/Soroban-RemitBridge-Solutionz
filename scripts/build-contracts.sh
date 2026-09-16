@@ -19,7 +19,22 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONTRACTS_DIR="${REPO_ROOT}/contracts"
-TARGET="wasm32-unknown-unknown"
+
+# `wasm32v1-none`, NOT `wasm32-unknown-unknown`.
+#
+# Since Rust 1.82 the `wasm32-unknown-unknown` target enables WebAssembly
+# features that are *not* part of the MVP -- `reference-types`, and more once the
+# toolchain bumps again. A toolchain never notices: the Wasm builds, and even the
+# export-table assertion in CI can parse it, because Node's WebAssembly engine
+# supports those features. Soroban's VM does not, so the artifact is rejected at
+# upload with `Error(WasmVm, InvalidAction)` and a parser message about a byte
+# offset. That failure appears only on a real deploy, which is the worst place to
+# find it, and `-C target-feature=-reference-types` does not reliably fix it
+# because the next bump re-enables the next feature.
+#
+# `wasm32v1-none` is the target that exists for this: WebAssembly 1.0 only, no
+# proposals, no std. Both targets are listed in `rust-toolchain.toml`.
+TARGET="wasm32v1-none"
 OUT_DIR="${CONTRACTS_DIR}/target/${TARGET}/release"
 
 if ! command -v cargo >/dev/null 2>&1; then

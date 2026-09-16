@@ -45,7 +45,13 @@ const CONTRACTS = [
   { name: 'remit-escrow', artifact: 'remit_escrow.wasm' },
 ] as const;
 
-const ARTIFACT_DIR = resolve(REPO_ROOT, 'contracts/target/wasm32-unknown-unknown/release');
+/**
+ * Must match `TARGET` in `scripts/build-contracts.sh`, which explains why the
+ * build uses `wasm32v1-none` rather than `wasm32-unknown-unknown`: the latter
+ * emits WebAssembly features Soroban's VM rejects, so a deploy from it fails at
+ * upload with an unhelpful parser error.
+ */
+const ARTIFACT_DIR = resolve(REPO_ROOT, 'contracts/target/wasm32v1-none/release');
 
 interface DeployedAddresses {
   network: string;

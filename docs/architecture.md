@@ -73,8 +73,8 @@ Two rules shape everything else:
 
 ```
 RemitEscrow.create_transfer
-  └─▶ ComplianceHook.check_transfer_allowed(sender, amount, corridor)
-  └─▶ ComplianceHook.commit_transfer(sender, amount, corridor)   [after funds move]
+  └─▶ ComplianceHook.commit_transfer(sender, amount, corridor)   [enforces the
+      gate and records the day's volume in one call, before funds move]
 
 RemitEscrow.claim_transfer
   └─▶ AgentRegistry.is_authorized_for_corridor(agent, corridor)
@@ -248,9 +248,8 @@ sender app          backend                   chain
     │ generate code    │                        │
     │ sha256(code)     │                        │
     ├─────────────── create_transfer ──────────────────────────▶ RemitEscrow
-    │                  │                        ├─ check_transfer_allowed ▶ ComplianceHook
-    │                  │                        ├─ transfer tokens in
-    │                  │                        └─ commit_transfer ▶ ComplianceHook
+    │                  │                        ├─ commit_transfer ▶ ComplianceHook (gate + volume)
+    │                  │                        └─ transfer tokens in
     │ ◀──────── transfer_id, expiry ────────────────────────────┤
 ```
 

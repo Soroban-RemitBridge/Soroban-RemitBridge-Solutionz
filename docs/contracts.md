@@ -77,12 +77,14 @@ Order of operations, and why:
 
 1. **Validate cheap inputs.** A zero amount or a past expiry fails before
    anything is touched.
-2. **`check_transfer_allowed`.** Before funds move, so a compliance refusal costs
-   nothing.
+2. **`commit_transfer`.** One call that both evaluates the gate and records the
+   amount against the sender's rolling daily bucket, before funds move — so a
+   compliance refusal costs nothing, and the amount charged to the day's ceiling
+   is the amount the gate approved. This was two calls (check, then commit);
+   collapsing them removed a cross-contract invocation and a duplicated read of
+   the thresholds and the bucket from every transfer.
 3. **Transfer tokens in.** Only after the gate approves.
-4. **`commit_transfer`.** Records the amount against the sender's rolling daily
-   bucket, inside the same transaction.
-5. **Persist and emit.**
+4. **Persist and emit.**
 
 The contract cannot tell a `sha256` of a low-entropy code from a good one. It
 sees 32 bytes either way. Code generation is therefore the *client's*
@@ -298,7 +300,7 @@ tree visible in the transaction itself.
 ```rust
 fn check_transfer_allowed(env, sender, amount, corridor_id) -> Result<bool, ComplianceError>
 fn explain_transfer(env, sender, amount, corridor_id)  -> TransferDecision
-fn commit_transfer(env, sender, amount, corridor_id)   -> Result<i128, ComplianceError>
+fn commit_transfer(env, sender, amount, corridor_id)   -> Result<i128, ComplianceError>  // enforces + records
 ```
 
 `check_transfer_allowed` is **pure** — no writes — which is what lets the sender
@@ -306,12 +308,15 @@ app simulate it read-only to preflight an amount. `explain_transfer` is its
 non-failing companion for UIs, returning a `TransferDecision` with the required
 tier, the held tier, a reason tag and remaining daily headroom. It exists so the
 console can render *why* a transfer needs more verification without
-re-implementing the tiering rules off-chain and drifting from the contract.
+re-implementing the tiering rules off-chain and drifting from the contract. Both
+are projections of `evaluate`, the one function that decides.
 
-`commit_transfer` is split from the check so the escrow can do reserve → commit
-inside one atomic transaction. `NotEscrow` guards it: only the registered escrow
-may commit volume, so nobody can exhaust another sender's daily bucket by calling
-the hook directly.
+`commit_transfer` is the enforcing write path: it evaluates the same rules and
+records the volume, in that order and in one invocation, which is what makes it
+impossible to commit an amount the gate never approved. `NotEscrow` guards it —
+only the registered escrow may call it — so a stranger cannot exhaust another
+sender's daily bucket, and a sender cannot commit their own volume with a
+favourable amount.
 
 Every refusal is a distinct typed error, because the sender-facing app turns them
 into different journeys — `AttestationMissing` opens verification,

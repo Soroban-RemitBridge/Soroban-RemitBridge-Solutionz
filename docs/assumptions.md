@@ -103,17 +103,20 @@ like-for-like: registry bond units and pool draw units are the same asset.
 to compare across them. The roadmap lists this as a known limitation rather than
 pretending the single-token assumption is free.
 
-### Compliance checks are pure; commitment is separate
+### The gate is readable for free, enforceable in one write
 
 `check_transfer_allowed` performs no writes, so it is safe to call from read-only
-simulation and from a sender app preflighting an amount.
-`commit_transfer` records volume into the sender's rolling daily bucket.
+simulation and from a sender app preflighting an amount. `explain_transfer` is
+the same rule with the reasons attached. `commit_transfer` is the write path, and
+it evaluates as well as records.
 
-**Consequence.** The escrow calls both inside one transaction, so reserve and
-commit cannot diverge. A caller that skipped `commit_transfer` would pass the
-per-transfer gate while bypassing the daily ceiling entirely, which is why the
-hook accepts commitments only from the registered escrow address and reverts on
-any other caller.
+**Consequence.** The escrow makes one call, not two: the amount charged to the
+day's ceiling is the amount the gate approved, and there is no path that commits
+volume without enforcing. It is also cheaper — a second cross-contract
+invocation, a second read of the thresholds and a second read of the bucket were
+all removed from every transfer. It remains true that bypassing the hook would
+bypass the daily ceiling entirely, which is why commitments are accepted only
+from the registered escrow address and revert for any other caller.
 
 ### There is no `rejected_draws` counter
 

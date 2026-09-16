@@ -33,7 +33,10 @@ reviewable commit rather than silent drift.
 
 ```bash
 cd contracts
-cargo test --all-features             # 115 tests
+cargo test --all-features             # 116 tests
+
+# What each money-moving entry point costs, split into work and rent
+cargo test -p remit-escrow cost_report_hot_paths -- --nocapture
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 
@@ -94,7 +97,7 @@ replicas racing to advance the same cursor.
 | --- | --- | --- |
 | Types | `npm run typecheck` | The code agrees with its own types |
 | Lint | `npm run lint` | Type-aware rules: floating promises, untyped payloads, `no-misused-promises` |
-| Tests | `npm test` | Behaviour, 93 tests |
+| Tests | `npm test` | Behaviour, 97 tests |
 | Build | `npm run build` | The production build compiles |
 | Audit | `npm audit` | Clean |
 
@@ -211,8 +214,38 @@ cp .env.example .env
 cp config/testnet.example.json config/testnet.json
 
 npm run deploy:dry-run             # validates args and encoding, submits nothing
-npm run deploy                     # uploads, deploys, initializes, wires, verifies
+npm run verify                     # reads the deployment's state back over RPC
+npm run smoke-test                 # settles one real transfer through it
 ```
+
+`deploy` writes `deployed-addresses.json` and refuses to overwrite one that
+exists: deploying is not reversible, and a second set of contracts with the
+backend pointed at them is worse than a failed command. Move the old file aside
+if that is what you intend.
+
+`verify` and `smoke-test` exist because a deploy script reporting success is not
+evidence. `verify` reads **state** back from the RPC — thirteen checks of regions,
+corridors, tier bands, both cross-references, fee, treasury and token — instead of
+repeating what the script believed it sent. `smoke-test` goes further and settles
+a real transfer: it funds and bonds an agent, publishes an attestation, creates a
+transfer, claims it, and then checks the token balances show the payout, the
+platform fee and an empty escrow. It needs `TEST_HOLDER_SECRET_KEY` and
+`TEST_TREASURY_SECRET_KEY` from `scripts/.env` (`TEST_AGENT_SECRET_KEY` is
+optional, and a fresh agent key is printed when it is absent), and it refuses any
+network that is not testnet.
+
+Two things cost real time when running against a live network:
+
+* **The ledger clock is not your clock.** A transfer expiry of exactly
+  `max_expiry_secs` from `Date.now()` is already past the bound when the
+  transaction executes a few seconds later, and the escrow answers
+  `ExpiryTooFar`. Leave margin.
+* **A `require_auth` failure is a trap, not an error code.** The contract panics
+  and you see `Error(WasmVm, InvalidAction)` with no mention of the signer, so a
+  call that must be sourced by the account it names has to be sent by that
+  account. Related: a `#[contracttype]` enum crosses the ABI as a one-element
+  vector of the case name, not as a bare symbol — get it wrong and you get the
+  same trap.
 
 Always dry-run first. The dry run loads the real Wasm, derives valid placeholder
 addresses and performs genuine argument encoding, so it exercises the

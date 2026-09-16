@@ -280,7 +280,7 @@ Prerequisites: **Node 22+**, **Rust stable + `wasm32v1-none`**, Docker
 
 ```bash
 cd contracts
-cargo test --all-features          # 115 tests
+cargo test --all-features          # 116 tests
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 ```
@@ -290,7 +290,7 @@ Build deployable Wasm:
 ```bash
 cd ../scripts
 npm install
-npm run build:contracts            # writes contracts/target/wasm32-unknown-unknown/release
+npm run build:contracts            # writes contracts/target/wasm32v1-none/release
 ```
 
 ### 2. Deploy and wire (Stellar Testnet)
@@ -375,10 +375,13 @@ your machine's LAN address.
 ## Testing
 
 ```bash
-# Contracts — 115 tests, clippy clean
+# Contracts — 116 tests, clippy clean
 cd contracts && cargo test --all-features
 
-# Backend — 93 tests
+# What the contracts cost, per entry point that moves money
+cd contracts && cargo test -p remit-escrow cost_report_hot_paths -- --nocapture
+
+# Backend — 97 tests
 cd backend && npm test
 
 # Frontends — 71 tests (console), 33 tests (mobile)
@@ -394,6 +397,13 @@ cd backend   && npm run typecheck && npm run lint
 cd admin-web && npm run typecheck && npm run lint
 cd mobile    && npm run typecheck && npm run lint
 cd scripts   && npm run typecheck
+```
+
+Against the deployed testnet contracts (these spend testnet fees and move test
+tokens — `smoke-test` refuses any network that is not testnet):
+
+```bash
+cd scripts && npm run verify && npm run smoke-test
 ```
 
 What the suites cover, and why those cases:
@@ -453,19 +463,94 @@ anyone in. `OPERATOR_SESSION_SECRET` is a secret; `OPERATOR_ACCOUNTS` holds
 hashes, not passwords, and two instances that disagree about it will disagree
 about who can sign in.
 
-Testnet contract addresses and hosted URLs are written to
-`deployed-addresses.json` by the deploy script and belong here once a deployment
-has been run:
+### Live testnet deployment
 
-```
-AgentRegistry    C…
-ComplianceHook   C…
-LiquidityPool    C…
-RemitEscrow      C…
+Four contracts are deployed, wired and initialised on Stellar Testnet. The exact
+record — addresses, keys' public halves, Wasm hashes and the transactions that
+prove the flow — is committed at [`deployments/testnet.json`](deployments/testnet.json),
+so it can be checked rather than taken on trust.
+
+| Contract | Address |
+| --- | --- |
+| AgentRegistry | `CBMSEGT6GHDJUJ4LVJFPDQPO2P6OIDDPMABPQVTUOO3GWZ7ZQHIU37SL` |
+| ComplianceHook | `CDROUIBCAJ77JR53JVS3ZLOIT7EZKU26IYQPYHNEXPLY6D5HMOEK5BQG` |
+| LiquidityPool | `CBKZJLFJ6Q6JCVJB7LVVOLFN25HAHSFXJ664PR5KJKRKW6NFCTL6FZRL` |
+| RemitEscrow | `CBLDC6F6KITEJPY6F3NX2S5W5H44MOUWQ2FAOZCUGFSX2RQAW2NENGG2` |
+| Token (SAC, test asset `RUSD`) | `CC7GPJAS77EA5TWCDN3JH4DUK65FUO6I4ITCU2SUVIIJBYHH6RPRJLRD` |
+
+Configured for two regions (`NG_LAG`, `KE_NBO`) and two corridors (`NGN_LAG`,
+`KES_NBO`) at 200 bps, with a 604800-second transfer expiry ceiling.
+
+Deployed with **three separate keys** — admin, attester and treasury are not the
+same account. That was not true of the first testnet run, and collapsing them hid
+two real bugs (see [Verification status](#verification-status)).
+
+Proving the deployment, in the order that matters:
+
+```bash
+cd scripts
+npm run verify        # reads state back over RPC — 13 checks, not the deploy
+                      # script's own report
+npm run smoke-test    # settles one real transfer: bond, attest, create, claim,
+                      # then checks the payout, the fee and the empty escrow
 ```
 
-They are left blank rather than filled with placeholder values, because a
-plausible-looking address is worse than an obvious gap.
+The console is deployed at **<https://remitbridge-console.vercel.app>**. It
+requires a credential by construction, so a visit without one redirects to
+`/login`; the operators are configuration on the host (`OPERATOR_ACCOUNTS`), and
+the deployment carries a single throwaway operator for demonstration. It is
+`noindex` either way. No backend is hosted, so every panel renders its
+"unavailable" state rather than inventing data — the proxy answers `502` for a
+real backend call, which is the honest outcome and is asserted in the end-to-end
+suite.
+
+### What a transfer costs
+
+Soroban bills a transfer in four parts: instructions, ledger entries, ledger
+bytes and events (the *work*), plus **rent** — a prepaid reservation for how long
+the entries it touches are kept alive. Rent is not a function of the code path,
+so the two are reported separately by `cargo test -p remit-escrow cost_report_hot_paths`
+rather than folded into one number that would make two equally cheap calls look
+different.
+
+Measured on `create_transfer` (the expensive path: compliance gate, volume
+commit, token pull, four writes), before and after the changes below:
+
+| | instructions | memory (B) | rent (stroops) | work fee (stroops) |
+| --- | --- | --- | --- | --- |
+| Before | 598,613 | 118,514 | 4,599,646 | 211,814 |
+| After | **528,184** | **107,503** | **4,142,071** | 211,638 |
+| Change | −11.8% | −9.3% | −9.9% | −0.1% |
+
+What produced that, and what was deliberately left alone:
+
+- **The gate and the commit are one call.** `create_transfer` used to invoke the
+  compliance hook twice — once to check, once to record volume — which cost a
+  second cross-contract invocation and a second read of both the thresholds and
+  the day's bucket. `commit_transfer` now evaluates *and* records in one
+  invocation, so the check and the increment read one value once and cannot
+disagree. The read-only projections (`check_transfer_allowed`,
+  `explain_transfer`) remain for the API's preflight.
+- **A day's volume bucket is reserved for three days, not thirty.** The bucket
+  key embeds the day it covers, so yesterday's bucket is never read again; its
+  useful life is one day. Everything else in the hook is configuration or an
+  attestation that stays live for weeks, so only the bucket got the short policy.
+- **Rent still dominates, and the biggest lever was left in place on purpose.**
+  The transfer record, the sender's transfer list and the instance entries are
+  still reserved for 30 days. Shorter would be cheaper, but a sender must be able
+  to refund an expired transfer well after its seven-day expiry, and a transfer
+  whose entry has been archived answers `TransferNotFound`. Trading a refund
+  window for a lower fee is the wrong trade, so it is documented here rather than
+  quietly taken.
+- **Wasm size is already minimal**: `opt-level = "z"`, `lto`, `codegen-units = 1`,
+  `panic = "abort"`, `strip`, with `overflow-checks` deliberately *on*. Artifacts
+  are 46–54 KB, and code size is charged on every upload and instantiation.
+
+The remaining known lever, not taken: `list_sender_transfers` is a `Vec` rewritten
+in full on every transfer, so it grows with a sender's history. The read model
+already derives a sender's transfers from `transfer_created` events, so the
+on-chain list is arguably redundant — but removing a view is an interface change
+across the contract, the API and the console, and it belongs in its own change.
 
 ---
 
@@ -478,8 +563,11 @@ the difference between code someone can rely on and code they cannot.
 
 | Component | Evidence |
 | --- | --- |
-| Contracts | 115 tests pass; `clippy --all-targets -- -D warnings` clean; `cargo fmt --check` clean; all four Wasm artifacts build and export only their own ABI |
-| Backend | 93 tests pass; `tsc --noEmit` clean; ESLint (type-aware) clean; production build succeeds |
+| Contracts | 116 tests pass; `clippy --all-targets -- -D warnings` clean; `cargo fmt --check` clean; all four Wasm artifacts build and export only their own ABI; a cost report measures every entry point that moves money, split into work and rent |
+| Backend | 97 tests pass; `tsc --noEmit` clean; ESLint (type-aware) clean; production build succeeds |
+| Contracts on testnet | Deployed, wired and initialised; `npm run verify` reads 13 checks of *state* back over RPC (regions, corridors, tier bands, both cross-references, fee, treasury, token) rather than trusting the deploy script's own report |
+| End-to-end on testnet | `npm run smoke-test` settles one real transfer against the deployed contracts: an agent funds, bonds and is authorised; an attestation is published; the escrow pulls 100 `RUSD`; the agent claims it; and the balances read back from the token show 98 to the agent, 2 to the treasury and an empty escrow. Five transactions, each with a hash recorded in `deployments/testnet.json` |
+| Contract argument encoding | The `tier` argument's encoding is asserted against the exact `ScVal` the SDK would build, after a real deployment showed the plausible-looking form was wrong (see bug 6) |
 | Backend: HTTP KYC provider | Tested against a stub vendor over the real `fetch` path: contract-valid approval, a non-2xx, a body outside the contract, an unknown outcome, a timeout, and a webhook with a wrong, absent or unconfigured signature — each refusing rather than approving |
 | Backend: Horizon price source | Tested against recorded Horizon responses, including one captured from `horizon.stellar.org` for a real USDC path; a currency with no configured asset, an empty path list, a non-decimal amount and a non-2xx all raise a named 503 rather than producing a rate |
 | Backend container | Image builds; entrypoint applies the schema to a live Postgres; API starts and serves `/healthz`, `/readyz`, `/openapi.json` and DB-backed routes; a signed quote was produced end to end through the container |
@@ -490,13 +578,14 @@ the difference between code someone can rely on and code they cannot.
 
 **Not yet verified**
 
-- **No on-chain deployment has been run.** The deploy script is exercised only in
-  dry-run mode, so contract *state* checks (as opposed to argument encoding) are
-  unproven against a live network. This is the single largest gap.
 - **No mobile native build.** Typecheck and lint pass; an EAS build has not been
   produced in this environment.
-- **No end-to-end test through a real corridor.** No funded testnet sender, no
-  live agent, no real cash-out.
+- **No cash has moved.** The testnet run above settles a transfer between test
+  accounts in a test asset. There is no funded anchor, no real agent float and no
+  physical cash-out, and no corridor has been priced from a live market.
+- **No backend is hosted,** so the live console renders its "unavailable" states
+  and its proxy answers `502` for real API calls. Its behaviour is proven; its
+  connection to a running service is not.
 - **The console's end-to-end suite answers from a stub, not the API.** It proves
   the console's own behaviour against a model of the backend's contract; it cannot
   prove the console agrees with the real service. That gap is why the one contract
@@ -547,6 +636,26 @@ Bugs found this way and fixed, none of which reading the code would have caught:
    a seam (`lib/auth/roles.ts`) rather than a flag. Found by building the console,
    not by reading it — and it is why the unit suite asserts the session format and
    the role table separately.
+6. **`publish_attestation` trapped on a live network** with
+   `Error(WasmVm, InvalidAction)` / `UnreachableCodeReached`, naming neither the
+   argument nor the caller. A `#[contracttype]` enum with unit variants does not
+   cross the ABI as the bare `Symbol` its name suggests: it is a one-element
+   vector of the case name, which is what the SDK's own spec encoder builds. The
+   backend sent the bare symbol, as did the deploy tooling, and every unit test
+   passed because the generated test client encodes it correctly. Found by sending
+   the argument to a deployed contract; now pinned by
+   `backend/tests/contract-encoding.test.ts` and documented in `scv.enumCase`.
+7. **A transfer expiry set to exactly the maximum was rejected.** The escrow
+   compares `expiry - now > max_expiry_secs` against the *ledger* clock, so seven
+   days from the local clock is already too far by the time the transaction
+   executes. `ExpiryTooFar` on the first real transfer. Found by running it.
+8. **Two deployment checks passed only because every role used one key.** The
+   verification script compared the escrow's treasury against the *admin*
+   address, and the smoke test read the fee from an account that was both treasury
+   and token issuer (where a received payment *reduces* the reported balance). Both
+   were satisfied by a single-key deployment and wrong for a real one. Found by
+   splitting admin, attester and treasury into three keys, which the deployment now
+   does.
 
 ---
 

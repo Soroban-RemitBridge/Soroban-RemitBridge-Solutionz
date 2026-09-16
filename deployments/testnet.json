@@ -1,0 +1,62 @@
+{
+  "network": "testnet",
+  "networkPassphrase": "Test SDF Network ; September 2015",
+  "deployedAt": "2026-09-16T11:54:39.015Z",
+  "deployedBy": "scripts (npm run deploy)",
+  "notes": [
+    "A record of one real deployment, committed so the addresses and the Wasm they run can be checked rather than taken on trust.",
+    "The admin, attester and treasury are three separate keys here. They were one key in the first testnet run, which hid two bugs: an escrow treasury check that compared against the admin, and a fee assertion that read the issuer's own balance.",
+    "`npm run verify` reads this deployment's state back over RPC (13 checks); `npm run smoke-test` settles a real transfer through it.",
+    "Keys are not recorded. The admin and attester addresses are public and appear below; their secrets live only in the operator's environment."
+  ],
+  "keys": {
+    "admin": "GC53DXK4XGEIYQAXGTSSWOZVNW6WHEFGYOU6JEGZ5YJ572JMJNJLPP6F",
+    "attester": "GC53DXK4XGEIYQAXGTSSWOZVNW6WHEFGYOU6JEGZ5YJ572JMJNJLPP6F",
+    "treasury": "GCXZMTX6WC2DACJHOOO4EJWHJMRUJMFEUNZQWFIG3XGNNPPYDCVX2B37"
+  },
+  "contracts": {
+    "agentRegistry": "CBMSEGT6GHDJUJ4LVJFPDQPO2P6OIDDPMABPQVTUOO3GWZ7ZQHIU37SL",
+    "complianceHook": "CDROUIBCAJ77JR53JVS3ZLOIT7EZKU26IYQPYHNEXPLY6D5HMOEK5BQG",
+    "liquidityPool": "CBKZJLFJ6Q6JCVJB7LVVOLFN25HAHSFXJ664PR5KJKRKW6NFCTL6FZRL",
+    "remitEscrow": "CBLDC6F6KITEJPY6F3NX2S5W5H44MOUWQ2FAOZCUGFSX2RQAW2NENGG2"
+  },
+  "token": {
+    "sac": "CC7GPJAS77EA5TWCDN3JH4DUK65FUO6I4ITCU2SUVIIJBYHH6RPRJLRD",
+    "code": "RUSD",
+    "kind": "Stellar Asset Contract wrapping an account-issued test asset. Testnet-only: the issuer holds the supply, and `npm run token:create` mints it."
+  },
+  "wasmHashes": {
+    "agent_registry": "e6c59c71a8e6bdcaf0c9492d195401b0bd49f2cf89808c4d99f84844d16b9caa",
+    "compliance_hook": "87b87a6946db3dd95c5c9193b190894562bb386eebb1a431c9793e4d57825333",
+    "liquidity_pool": "d6421db1d8d0d4d054c9c10081d47cd9818cb31eac5a8eac72a003807e951120",
+    "remit_escrow": "ce9b031fcb8003d1f17876cef098d024d0e13e28c09ffd66e816d472fe1227e7"
+  },
+  "wasmBytes": {
+    "agent_registry": 52183,
+    "compliance_hook": 46639,
+    "liquidity_pool": 53975,
+    "remit_escrow": 53723
+  },
+  "configuration": {
+    "feeBps": 200,
+    "maxExpirySecs": 604800,
+    "collateralRatioBps": 15000,
+    "defaultUtilizationCapBps": 8000,
+    "regions": ["NG_LAG", "KE_NBO"],
+    "corridors": ["NGN_LAG", "KES_NBO"]
+  },
+  "evidence": {
+    "verify": "13/13 checks read back from RPC after deployment (state, not the deploy script's own report).",
+    "smokeTest": {
+      "flow": "agent bonded and authorized → attestation published → transfer created → claimed → escrow empties, agent paid out, treasury paid the 200 bps fee",
+      "amountStroops": 1000000000,
+      "payoutStroops": 980000000,
+      "feeStroops": 20000000,
+      "transactions": {
+        "publish_attestation": "44983e59770a6518e5823e8ea434efb6573c17cd2e479670e779393ab0fc4f72",
+        "create_transfer": "0647377955a7a466c7b000b30a710a1645e00abbcec3cb774e86a6c7bb9cc734",
+        "claim_transfer": "db887e752fcaa0f6c83560d8d4d310af8e6156b2f0f4d0bbf20b93303d3329c5"
+      }
+    }
+  }
+}

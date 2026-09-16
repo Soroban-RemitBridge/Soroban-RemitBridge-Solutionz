@@ -196,36 +196,6 @@ sides safe from the other's counterparty risk:
 - Slashing redirects to the treasury, not to the operator's own account, and
   emits an event. Both are visible on-chain.
 
-### What this system does not claim
-
-- **It is not a licensed money transmitter.** RemitBridge is infrastructure an
-  anchor or MTO operates under *their* licences. Corridor-level regulatory
-  review is the operator's responsibility, and no amount of code changes that.
-- **The carrier it ships with is a mock — the real one is a config change.** Two
-  implementations of `IdVerificationProvider` are in the tree: `mock`, which is
-  deterministic and holds no external state, and used by CI; and `http`, an HTTP
-  adapter over a vendor's REST API with signature-verified webhooks. Selecting
-  the real one is `KYC_PROVIDER=http` plus a base URL — no call site moves.
-  Sumsub and Onfido are *not* shipped as named adapters; pointing `http` at their
-  API is how they are used. What is not claimed is any vendor-specific behaviour
-  beyond the documented request/response contract.
-- **The operator console's accounts are configuration, not identity.** It now
-  requires a credential — a signed session cookie, per-action role checks, and the
-  operator's own address written into the record an action produces (a float
-  top-up's `requestedBy` / `approvedBy`) — but there is no user table and no SSO.
-  Operators live in `OPERATOR_ACCOUNTS`, so onboarding one is a deploy and the
-  session carries the roles it was issued with until it expires. The append-only
-  `AuditLog` table is still defined with no writer, so attribution sits on the
-  affected rows rather than in one chronological trail — see
-  [docs/data-model.md](docs/data-model.md). SSO is roadmap item 1, and the console
-  remains `noindex` either way.
-- **The price source is real but the corridor mapping is not.** `PRICE_SOURCE`
-  selects between a live Stellar DEX read through Horizon and a static
-  placeholder. The DEX source refuses — by name — when a currency has no asset
-  configured, rather than inventing a rate. The static source still labels every
-  quote `oracleSource: "static-config"`, because a rate with no provenance is
-  indistinguishable from a stale one.
-
 ---
 
 ## Repository layout

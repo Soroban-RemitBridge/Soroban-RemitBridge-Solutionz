@@ -60,38 +60,17 @@ fn release(env: &Env, transfer: &mut Transfer, to: &Address, next_status: Transf
     storage::set_transfer(env, transfer);
 }
 
-/// Ask the compliance gate whether this transfer may proceed.
+/// Put a transfer to the compliance gate, which both enforces and records it.
+///
+/// One call rather than two: the gate evaluates and commits in a single
+/// invocation, so a transfer pays one cross-contract hop instead of two and
+/// there is no window in which a caller could record volume for a transfer the
+/// gate never approved.
 ///
 /// The two failure shapes are kept apart on purpose: a typed refusal from the
 /// gate is a policy outcome the sender can act on, whereas an invocation that
 /// could not complete is an incident. Collapsing them into one error would make
 /// the API report "you need to verify your ID" during a hook outage.
-fn check_compliance(
-    env: &Env,
-    hook: &Address,
-    sender: &Address,
-    amount: i128,
-    corridor_id: &Symbol,
-) -> Result<(), EscrowError> {
-    let outcome = ComplianceHookClient::new(env, hook).try_check_transfer_allowed(
-        sender,
-        &amount,
-        corridor_id,
-    );
-    match outcome {
-        Ok(Ok(true)) => Ok(()),
-        // A policy outcome the sender can act on. `Ok(false)` is reserved by the
-        // gate for a future "needs manual review" state and is treated as a
-        // refusal rather than silently allowed; `Err(Ok(..))` is one of the
-        // gate's typed refusals.
-        Ok(Ok(false)) | Err(Ok(_)) => Err(EscrowError::ComplianceRefused),
-        // An incident: the reply could not be decoded, or the invocation never
-        // completed (bad address, budget exhausted, host error).
-        Ok(Err(_)) | Err(Err(_)) => Err(EscrowError::ComplianceCallFailed),
-    }
-}
-
-/// Record the transfer against the sender's rolling daily volume.
 fn commit_volume(
     env: &Env,
     hook: &Address,
@@ -285,21 +264,20 @@ impl EscrowInterface for RemitEscrow {
             return Err(EscrowError::ExpiryTooFar);
         }
 
-        // Compliance runs *before* any funds move. A rejected transfer should
-        // never touch a balance, not even momentarily — a lock-then-refund path
-        // would burn gas and leak intent to observers for no benefit.
-        check_compliance(&env, &config.compliance_hook, &sender, amount, &corridor_id)?;
+        // Compliance runs *before* any funds move, and it both enforces and
+        // records in one call. A rejected transfer never touches a balance, not
+        // even momentarily — a lock-then-refund path would burn gas and leak
+        // intent to observers for no benefit. Recording the cumulative daily
+        // volume here rather than in a second call keeps the check and the
+        // commitment in one invocation, and the whole thing reverts together if
+        // anything later in this function fails.
+        commit_volume(&env, &config.compliance_hook, &sender, amount, &corridor_id)?;
 
         token::Client::new(&env, &token).transfer(
             &sender,
             &env.current_contract_address(),
             &amount,
         );
-
-        // Per-transfer checks are not enough on their own: the daily ceiling is
-        // cumulative, so it is committed here, inside the same transaction, and
-        // reverts the whole transfer if it would breach.
-        commit_volume(&env, &config.compliance_hook, &sender, amount, &corridor_id)?;
 
         let id = storage::next_id(&env);
         let transfer = Transfer {

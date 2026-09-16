@@ -9,6 +9,16 @@ pub const LEDGERS_PER_DAY: u32 = 17_280;
 pub const BUMP_AMOUNT: u32 = 30 * LEDGERS_PER_DAY;
 pub const BUMP_THRESHOLD: u32 = BUMP_AMOUNT - LEDGERS_PER_DAY;
 
+/// TTL policy for a rolling-volume bucket, which is deliberately much shorter
+/// than [`BUMP_AMOUNT`].
+///
+/// The bucket key embeds the day it covers, so yesterday's bucket is never read
+/// again: its useful life is bounded at one day, not thirty. Every other entry
+/// in this contract is either configuration or an attestation that stays live
+/// for weeks, which is why only this one gets the short policy.
+pub const VOLUME_BUMP_AMOUNT: u32 = 3 * LEDGERS_PER_DAY;
+pub const VOLUME_BUMP_THRESHOLD: u32 = VOLUME_BUMP_AMOUNT - LEDGERS_PER_DAY;
+
 /// Ledgers a rolling day is measured in for the daily-volume bucket key.
 pub const SECONDS_PER_DAY: u64 = 86_400;
 
@@ -165,28 +175,37 @@ pub fn day_of(timestamp: u64) -> u64 {
     timestamp / SECONDS_PER_DAY
 }
 
+/// Read a day's volume bucket without extending its TTL.
+///
+/// Deliberately no bump here. A bucket is kept alive by the write that charges
+/// it, and every other reader of this value is either the ceiling check in the
+/// same invocation or an off-chain view; extending on read would make the
+/// cheapest path (a query) the one that reserves rent.
 pub fn daily_volume(env: &Env, subject: &Address, corridor_id: &Symbol, day: u64) -> i128 {
     let key = DataKey::DailyVolume(subject.clone(), corridor_id.clone(), day);
-    let value: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-    if value != 0 {
-        bump_persistent(env, &key);
-    }
-    value
+    env.storage().persistent().get(&key).unwrap_or(0)
 }
 
-pub fn add_daily_volume(
+/// Write a day's volume bucket.
+///
+/// The total is passed in rather than added here so that the caller that
+/// *checked* the ceiling against a value is the one that stores it. Reading the
+/// bucket again to add to it would let the check and the write disagree if two
+/// callers interleaved, and costs an extra ledger read on every transfer.
+pub fn set_daily_volume(
     env: &Env,
     subject: &Address,
     corridor_id: &Symbol,
     day: u64,
-    amount: i128,
-) -> Result<i128, ComplianceError> {
-    let current = daily_volume(env, subject, corridor_id, day);
-    let updated = current
-        .checked_add(amount)
-        .ok_or(ComplianceError::Overflow)?;
+    total: i128,
+) -> i128 {
     let key = DataKey::DailyVolume(subject.clone(), corridor_id.clone(), day);
-    env.storage().persistent().set(&key, &updated);
-    bump_persistent(env, &key);
-    Ok(updated)
+    env.storage().persistent().set(&key, &total);
+    // A bucket is only ever consulted on the day it covers, so it is bumped for
+    // days, not for a month. Reserving thirty days of rent for a value that is
+    // dead tomorrow was the single largest avoidable cost in the transfer path.
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, VOLUME_BUMP_THRESHOLD, VOLUME_BUMP_AMOUNT);
+    total
 }

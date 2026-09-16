@@ -404,6 +404,11 @@ fn commits_accumulate_into_the_daily_bucket() {
     let f = setup();
     let sender = Address::generate(&f.env);
     f.env.ledger().set_timestamp(DAY);
+    // Committing now *enforces* the gate as well as recording the volume, so a
+    // sender above the no-verification band has to hold a live attestation to be
+    // committed at all. The accumulation below is what this test is about; the
+    // attestation is what makes the second amount admissible.
+    attest(&f, &sender, KycTier::Standard, 30);
 
     f.client.commit_transfer(&sender, &100, &corridor());
     let total = f.client.commit_transfer(&sender, &250, &corridor());

@@ -21,6 +21,12 @@ struct Evaluation {
     required_tier: KycTier,
     held_tier: KycTier,
     remaining_daily: i128,
+    /// The sender's volume for this day *including* this transfer.
+    ///
+    /// Carried out of the evaluation so the write path does not have to read the
+    /// same bucket a second time: the ceiling check and the increment are then
+    /// guaranteed to be reading one value rather than two.
+    daily_total_after: i128,
 }
 
 fn require_admin(env: &Env) -> Result<Address, ComplianceError> {
@@ -110,6 +116,7 @@ fn evaluate(
     Ok(Evaluation {
         required_tier,
         held_tier,
+        daily_total_after: headroom,
         remaining_daily,
     })
 }
@@ -307,10 +314,11 @@ impl ComplianceHookInterface for ComplianceHook {
         amount: i128,
         corridor_id: Symbol,
     ) -> Result<i128, ComplianceError> {
-        // Only the registered escrow may commit volume: it is the contract that
-        // already verified the sender's authorization for this specific
-        // transfer, and letting an arbitrary caller increment a sender's daily
-        // bucket would be a cheap denial-of-service on their limit.
+        // Only the registered escrow may commit volume. It is the contract that
+        // verified the sender's authorization for this specific transfer, and
+        // this call now *enforces* the gate as well as recording the volume — so
+        // the escrow-only check here is what stops the gate being bypassed by a
+        // sender committing their own volume with a favourable amount.
         //
         // A contract address authorizes implicitly when it is the direct
         // invoker of the call, so `require_auth` here is satisfied only by the
@@ -321,33 +329,43 @@ impl ComplianceHookInterface for ComplianceHook {
             return Err(ComplianceError::InvalidAmount);
         }
 
-        let thresholds =
-            storage::get_thresholds(&env, &corridor_id).ok_or(ComplianceError::UnknownCorridor)?;
-        let tier = thresholds.required_tier(amount);
+        // One enforcing write path. The gate and the commit used to be two
+        // separate entry points, which cost every transfer a second
+        // cross-contract invocation and a second read of the thresholds and the
+        // day's volume — and required the ceiling to be restated here so that a
+        // caller could not commit without having checked. Evaluating inside the
+        // write path removes both the duplication and the cost: the check and
+        // the increment cannot disagree, because they read one value once.
+        //
+        // `check_transfer_allowed` and `explain_transfer` remain as read-only
+        // projections of the same rule, for callers that want an answer without
+        // writing (the API preflights a quote this way).
+        let evaluation = evaluate(&env, &sender, amount, &corridor_id)?;
         let day = storage::day_of(env.ledger().timestamp());
-
-        // Re-check inside the write path. `commit_transfer` is a separate call
-        // from the check, so nothing stops a caller from committing without
-        // having checked; enforcing the ceiling here makes the limit hold even
-        // if a future caller forgets to preflight.
-        let new_total = storage::daily_volume(&env, &sender, &corridor_id, day)
-            .checked_add(amount)
-            .ok_or(ComplianceError::Overflow)?;
-        if new_total > thresholds.daily_limit {
-            return Err(ComplianceError::DailyLimitExceeded);
-        }
-
-        let new_total = storage::add_daily_volume(&env, &sender, &corridor_id, day, amount)?;
+        let new_total = storage::set_daily_volume(
+            &env,
+            &sender,
+            &corridor_id,
+            day,
+            evaluation.daily_total_after,
+        );
 
         let mut stats = storage::get_stats(&env);
         stats.transfers_committed = stats.transfers_committed.saturating_add(1);
-        if tier == KycTier::Enhanced {
+        if evaluation.required_tier == KycTier::Enhanced {
             stats.enhanced_tier_transfers = stats.enhanced_tier_transfers.saturating_add(1);
         }
         storage::set_stats(&env, &stats);
         storage::bump_instance(&env);
 
-        events::transfer_committed(&env, &sender, &corridor_id, amount, tier, new_total);
+        events::transfer_committed(
+            &env,
+            &sender,
+            &corridor_id,
+            amount,
+            evaluation.required_tier,
+            new_total,
+        );
         Ok(new_total)
     }
 

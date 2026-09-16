@@ -7,10 +7,12 @@ import {
   EmptyState,
   ErrorState,
   Mono,
+  PermissionNote,
   StatCard,
   StatusBadge,
   Table,
 } from '@/components/ui';
+import { currentOperatorCan } from '@/lib/auth/current';
 import { endpoints } from '@/lib/endpoints';
 import { formatDateTime, formatStroops, formatRelative, shortId } from '@/lib/format';
 
@@ -38,6 +40,10 @@ export default async function CompliancePage({
 }) {
   const { status: requestedStatus } = await searchParams;
   const status = requestedStatus ?? 'ACTIVE';
+
+  // Read once for the page: an operator whose role cannot revoke should not be
+  // offered the form that would be refused.
+  const mayRevoke = await currentOperatorCan('kyc:revoke');
 
   const [attestations, transfers, corridors] = await Promise.all([
     endpoints.attestations({ status, limit: 100 }),
@@ -96,7 +102,11 @@ export default async function CompliancePage({
         title="Revoke attestations for a subject"
         description="Publishes a revocation to the compliance hook and marks every attestation for that subject revoked, here and on-chain."
       >
-        <RevokeAttestationForm />
+        {mayRevoke ? (
+          <RevokeAttestationForm />
+        ) : (
+          <PermissionNote permission="kyc:revoke" action="publish a revocation" />
+        )}
       </Card>
 
       <Card

@@ -19,15 +19,22 @@ import { useState } from 'react';
  * - Failures are surfaced inline and the panel is *not* optimistically updated.
  *   Showing a top-up as approved before the backend has agreed would be a lie
  *   with a settlement transaction attached.
+ *
+ * Hiding a button is a usability affordance and not a control: the proxy
+ * authorises every mutation from the session, so a role that cannot approve a
+ * top-up is refused whether or not the button rendered. These components assume
+ * that; they do not implement it.
  */
 
 /**
- * There is no operator authentication yet — see the roadmap in the README. Until
- * there is, every action records this fixed identity so the audit log is honest
- * about the fact that attribution is currently deployment-wide rather than
- * per-person. A placeholder that looks like a real user id would be worse.
+ * Nothing here sends an operator identity.
+ *
+ * `requestedBy` and `approvedBy` used to be constants in this file, because there
+ * was no authentication to derive them from. They are now written by
+ * `/api/backend/*` from the verified session, which is the only place that can be
+ * trusted with them — a value the browser supplies is a value the browser can
+ * choose, and this one ends up in the audit log.
  */
-const OPERATOR_ID = 'operator-console';
 
 type Outcome = { kind: 'error' | 'ok'; message: string };
 
@@ -142,9 +149,9 @@ export function TopUpDecisionForm({ requestId }: { requestId: string }) {
   async function decide(approved: boolean): Promise<void> {
     setPending(approved ? 'approve' : 'reject');
     setOutcome(null);
+    // `approvedBy` is set server-side from the session, so it is not sent here.
     const result = await post(`/agents/liquidity/top-ups/${requestId}/decision`, {
       approved,
-      approvedBy: OPERATOR_ID,
       ...(note.length > 0 ? { note } : {}),
     });
     setPending(null);
@@ -213,12 +220,12 @@ export function TopUpProposeForm({ agentId, regionId }: { agentId: string; regio
     if (!valid) return;
     setPending(true);
     setOutcome(null);
+    // `requestedBy` is set server-side from the session, so it is not sent here.
     const result = await post('/agents/liquidity/top-ups', {
       agentId,
       regionId,
       amount,
       reason: reason.trim(),
-      requestedBy: OPERATOR_ID,
     });
     setPending(false);
     setOutcome(result);

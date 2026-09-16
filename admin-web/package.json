@@ -9,6 +9,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src tests e2e playwright.config.ts --max-warnings 0",
+    "operator:hash": "node scripts/operator-hash.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

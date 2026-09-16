@@ -1,7 +1,5 @@
 import type { Metadata } from 'next';
 
-import { Shell } from '@/components/shell';
-
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -11,12 +9,17 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/**
+ * The document root.
+ *
+ * The console chrome lives in `(console)/layout.tsx` rather than here, because the
+ * sign-in screen is not part of the console and should not render its navigation.
+ * Anything wrapped in this layout is public; anything under `(console)/` is not.
+ */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <Shell>{children}</Shell>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

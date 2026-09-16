@@ -1,7 +1,18 @@
 import Link from 'next/link';
 
 import { MutationButton, TopUpProposeForm } from '@/components/actions';
-import { Badge, Card, DefinitionList, ErrorState, Mono, StatCard, StatusBadge, Table } from '@/components/ui';
+import {
+  Badge,
+  Card,
+  DefinitionList,
+  ErrorState,
+  Mono,
+  PermissionNote,
+  StatCard,
+  StatusBadge,
+  Table,
+} from '@/components/ui';
+import { currentOperatorCan } from '@/lib/auth/current';
 import { endpoints } from '@/lib/endpoints';
 import { formatBps, formatDateTime, formatStroops, shortId } from '@/lib/format';
 
@@ -9,6 +20,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function AgentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  // Read once for the page: offering an action the server will refuse ends in a
+  // 403 after a confirmation dialog.
+  const [mayPropose, maySweep] = await Promise.all([
+    currentOperatorCan('liquidity:propose'),
+    currentOperatorCan('liquidity:sweep'),
+  ]);
   const agent = await endpoints.agent(id);
 
   if (!agent.ok) {
@@ -99,12 +116,16 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
               <p className="mb-2 mt-0.5 text-xs text-ink-500">
                 The same sweep the scheduled job runs. Safe to run by hand when an alert looks stale.
               </p>
-              <MutationButton
-                label="Run liquidity sweep"
-                path="/agents/liquidity/sweep"
-                body={{ regionId: detail.regionId }}
-                variant="secondary"
-              />
+              {maySweep ? (
+                <MutationButton
+                  label="Run liquidity sweep"
+                  path="/agents/liquidity/sweep"
+                  body={{ regionId: detail.regionId }}
+                  variant="secondary"
+                />
+              ) : (
+                <PermissionNote permission="liquidity:sweep" action="run a sweep" />
+              )}
             </div>
 
             <div className="border-t border-ink-100 pt-4">
@@ -113,7 +134,11 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
                 Creates a request only. A separate approval is required before anything is drawn —
                 a machine must not be able to move float on its own.
               </p>
-              <TopUpProposeForm agentId={detail.id} regionId={detail.regionId} />
+              {mayPropose ? (
+                <TopUpProposeForm agentId={detail.id} regionId={detail.regionId} />
+              ) : (
+                <PermissionNote permission="liquidity:propose" action="request a top-up" />
+              )}
             </div>
           </div>
         </Card>

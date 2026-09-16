@@ -7,10 +7,12 @@ import {
   EmptyState,
   ErrorState,
   Mono,
+  PermissionNote,
   StatCard,
   StatusBadge,
   Table,
 } from '@/components/ui';
+import { currentOperatorCan } from '@/lib/auth/current';
 import { endpoints } from '@/lib/endpoints';
 import { formatBps, formatDateTime, formatStroops, formatRelative, shortId } from '@/lib/format';
 
@@ -31,6 +33,12 @@ export default async function LiquidityPage({
   searchParams: Promise<{ regionId?: string }>;
 }) {
   const { regionId: requestedRegion } = await searchParams;
+  // Read once for the page: rendering a decision form to a role that cannot decide
+  // produces a 403 after a confirmation dialog.
+  const [mayDecide, mayExecute] = await Promise.all([
+    currentOperatorCan('liquidity:decide'),
+    currentOperatorCan('liquidity:execute'),
+  ]);
   const corridors = await endpoints.corridors();
 
   const regions = corridors.ok
@@ -146,7 +154,11 @@ export default async function LiquidityPage({
                 <td className="max-w-xs px-5 py-3 text-xs text-ink-600">{request.reason}</td>
                 <td className="px-5 py-3 text-xs text-ink-600">{formatDateTime(request.createdAt)}</td>
                 <td className="px-5 py-3">
-                  <TopUpDecisionForm requestId={request.id} />
+                  {mayDecide ? (
+                    <TopUpDecisionForm requestId={request.id} />
+                  ) : (
+                    <PermissionNote permission="liquidity:decide" action="decide a top-up" />
+                  )}
                 </td>
               </tr>
             ))}
@@ -171,12 +183,16 @@ export default async function LiquidityPage({
                 <td className="px-5 py-3 text-xs text-ink-600">{request.approvedBy ?? '—'}</td>
                 <td className="px-5 py-3 text-xs text-ink-600">{formatDateTime(request.decidedAt)}</td>
                 <td className="px-5 py-3">
-                  <MutationButton
-                    label="Execute draw"
-                    path={`/agents/liquidity/top-ups/${request.id}/execute`}
-                    body={{}}
-                    variant="primary"
-                  />
+                  {mayExecute ? (
+                    <MutationButton
+                      label="Execute draw"
+                      path={`/agents/liquidity/top-ups/${request.id}/execute`}
+                      body={{}}
+                      variant="primary"
+                    />
+                  ) : (
+                    <PermissionNote permission="liquidity:execute" action="execute a draw" />
+                  )}
                 </td>
               </tr>
             ))}

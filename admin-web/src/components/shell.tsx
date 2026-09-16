@@ -2,15 +2,20 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState, type ReactNode } from 'react';
 
 /**
  * The console chrome.
  *
- * A client component only because `usePathname` needs to mark the active
- * section — nothing else here is interactive, and the pages themselves stay
- * server-rendered.
+ * A client component because `usePathname` marks the active section and the
+ * sign-out button is interactive — nothing else here is, and the pages themselves
+ * stay server-rendered.
+ *
+ * The operator's identity arrives as a prop from `(console)/layout.tsx`, verified
+ * there from the session cookie. It is displayed because the audit trail records
+ * that same name against every action, and an operator should be able to see who
+ * the console thinks they are before approving a float move.
  */
 
 const NAV = [
@@ -21,7 +26,42 @@ const NAV = [
   { href: '/corridors', label: 'Corridors' },
 ] as const;
 
-export function Shell({ children }: { children: ReactNode }) {
+export interface ShellOperator {
+  name: string;
+  email: string;
+  roles: string[];
+}
+
+function SignOutButton() {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+
+  async function signOut(): Promise<void> {
+    setPending(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      // A full navigation rather than a client-side route change: the cookie has
+      // just changed, and the middleware should evaluate the next request from
+      // scratch rather than from a cached client-side router state.
+      router.replace('/login');
+      router.refresh();
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void signOut()}
+      disabled={pending}
+      className="rounded-md border border-ink-300 px-2.5 py-1 text-xs text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900 disabled:text-ink-400"
+    >
+      {pending ? 'Signing out…' : 'Sign out'}
+    </button>
+  );
+}
+
+export function Shell({ children, operator }: { children: ReactNode; operator: ShellOperator }) {
   const pathname = usePathname();
   const environment = process.env['NEXT_PUBLIC_ENVIRONMENT_LABEL'] ?? 'local';
 
@@ -61,6 +101,19 @@ export function Shell({ children }: { children: ReactNode }) {
           <span className="ml-auto rounded-full border border-ink-200 bg-ink-50 px-3 py-1 font-mono text-xs text-ink-600">
             env: {environment}
           </span>
+
+          <div className="flex items-center gap-3">
+            {/* Name, address and roles: the address is the value the backend's
+                audit trail actually records, so an operator can confirm it before
+                approving a float move rather than inferring it from their name. */}
+            <span className="text-xs text-ink-600" data-testid="operator-identity">
+              <span className="font-medium text-ink-900">{operator.name}</span>{' '}
+              <span className="text-ink-500">
+                &lt;{operator.email}&gt; ({operator.roles.join(', ')})
+              </span>
+            </span>
+            <SignOutButton />
+          </div>
         </div>
       </header>
 

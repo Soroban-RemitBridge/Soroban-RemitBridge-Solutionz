@@ -181,6 +181,21 @@ export function EmptyState({ title, hint }: { title: string; hint?: string | und
  * whether there are alerts" must never look the same on a compliance screen. The
  * backend's own message is included, since it usually names the missing piece.
  */
+/**
+ * Shown where a control would be, when the operator's role cannot use it.
+ *
+ * Explaining the absence is better than an empty cell: an operator who cannot find
+ * the Approve button needs to know whether the request is awaiting someone else,
+ * or whether their own account lacks the permission.
+ */
+export function PermissionNote({ permission, action }: { permission: string; action: string }) {
+  return (
+    <p className="text-xs text-ink-500">
+      Your role cannot {action} ({permission}). Ask an administrator.
+    </p>
+  );
+}
+
 export function ErrorState({ title, message }: { title: string; message: string }) {
   return (
     <div className="rounded-md border border-rose-200 bg-rose-50 px-5 py-4">

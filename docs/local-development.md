@@ -94,9 +94,18 @@ replicas racing to advance the same cursor.
 | --- | --- | --- |
 | Types | `npm run typecheck` | The code agrees with its own types |
 | Lint | `npm run lint` | Type-aware rules: floating promises, untyped payloads, `no-misused-promises` |
-| Tests | `npm test` | Behaviour, 52 tests |
+| Tests | `npm test` | Behaviour, 93 tests |
 | Build | `npm run build` | The production build compiles |
 | Audit | `npm audit` | Clean |
+
+The KYC and price-feed suites are worth knowing about because both are about
+refusal. `KYC_PROVIDER=mock` is what CI runs; `KYC_PROVIDER=http` is the real
+adapter, and its suite drives a stub vendor that returns a non-2xx, a body outside
+the documented contract, an unknown outcome, a timeout, and a webhook signed with
+the wrong key — each of which must refuse rather than approve. `PRICE_SOURCE=static`
+is the default so a fresh clone does not depend on Horizon being reachable;
+`PRICE_SOURCE=horizon` reads the Stellar DEX and its suite is pinned to a real
+`horizon.stellar.org` response.
 
 Whole stack in containers instead:
 
@@ -114,15 +123,28 @@ the first thing to check when the console and the chain appear to disagree.
 
 ```bash
 cd admin-web
-cp .env.example .env.local         # REMITBRIDGE_API_URL=http://localhost:4000
+cp .env.example .env.local         # REMITBRIDGE_API_URL + the two auth variables
 npm install
-npm run dev                        # http://localhost:3000
+
+export OPERATOR_SESSION_SECRET="$(openssl rand -base64 48)"
+export OPERATOR_ACCOUNTS="[{\"email\":\"you@example.com\",\"name\":\"Your Name\",\"passwordHash\":\"$(node scripts/operator-hash.mjs 'your password')\",\"roles\":[\"admin\"]}]"
+
+npm run dev                        # http://localhost:3000/login
 ```
+
+Both auth variables are required, and the console **fails closed** without them:
+with no `OPERATOR_SESSION_SECRET` every request answers `500
+CONSOLE_MISCONFIGURED` with an explanation, rather than treating "no secret" as
+"no session required" and serving a console that looks configured. Generating a
+hash by hand will not work either — `OPERATOR_ACCOUNTS` rejects anything that is
+not a `scrypt$…` string, so a plaintext password pasted in is a boot error rather
+than a working login. Roles are `viewer`, `operator` and `admin`.
 
 `REMITBRIDGE_API_URL` is deliberately **not** a `NEXT_PUBLIC_` variable. The
 browser never talks to the backend: route handlers read server-side and mutations
 are proxied through `/api/backend/*`, so the backend address is not in any client
-bundle and there is exactly one place a future auth token will be attached.
+bundle, and the proxy is the one place the session is checked and the operator's
+identity is written into a mutation's audit fields.
 
 Pages fetch with `force-dynamic`, so `next build` succeeds with no backend
 running — which is also the state a reviewer opening a preview build is in.
@@ -130,8 +152,8 @@ running — which is also the state a reviewer opening a preview build is in.
 ```bash
 npm run typecheck
 npm run lint
-npm test                           # response boundary + formatters, 29 tests
-npm run test:e2e                   # real browser over a production build, 43 tests
+npm test                           # response boundary, sessions, roles: 71 tests
+npm run test:e2e                   # real browser over a production build, 56 tests
 ```
 
 The console's tests are mostly about what it *refuses* to render: an amount
@@ -141,12 +163,19 @@ as unavailable rather than as an empty table — a state the type layer cannot
 check, because the bad value arrives at runtime.
 
 `test:e2e` builds the console, serves it on port 3100, and starts a stub backend
-on 4010 for it to read (`e2e/stub-backend.mjs`). Two consequences worth knowing:
-it needs Chromium once (`npx playwright install --with-deps chromium`), and it
-tests the built artifact rather than `next dev`, because the build is what ships.
+on 4010 for it to read (`e2e/stub-backend.mjs`). Three consequences worth knowing:
+it needs Chromium once (`npx playwright install --with-deps chromium`), it tests
+the built artifact rather than `next dev` because the build is what ships, and
+`playwright.config.ts` supplies the two auth variables itself — accounts whose
+hashes come from the real generator script, so the suite signs in through the real
+form rather than past it.
+
 The stub reads from `e2e/fixtures.mjs` and can be told to answer as a down,
 malformed or empty backend through `POST /__control`, which is how the suite
-proves a failed read and an empty result cannot look the same.
+proves a failed read and an empty result cannot look the same. A `setup` project
+signs in once and caches the cookie for every spec except `auth.spec.ts`, which
+runs deliberately without it — that is where the refusal, the redirect, the
+off-site `next` guard and the role checks are asserted.
 
 ---
 
@@ -219,6 +248,10 @@ make test          # the test suites only
 | Deploy dry run cannot find its config | `DEPLOY_CONFIG` is relative to the repository root. |
 | Mobile app reaches nothing on a physical device | `localhost` is the phone. Use the LAN address. |
 | Console shows an empty table instead of an error | The response failed schema validation, which renders as unavailable rather than empty — check the backend actually returned what the console reads. |
+| Console answers every route with `500 CONSOLE_MISCONFIGURED` | `OPERATOR_SESSION_SECRET` is unset or shorter than 32 characters. This is the gate failing closed, not an outage. |
+| `OPERATOR_ACCOUNTS` is rejected at startup | The password hash is not a `scrypt$…` string (plaintext is refused), the JSON is malformed, an email is duplicated, or a role is not one of `viewer` / `operator` / `admin`. |
+| A signed-in operator is bounced to `/login` on every navigation | The session secret differs between the process that issued the cookie and the one verifying it — common after a restart with a freshly generated secret. |
+| A quote fails with a 503 naming a currency | `PRICE_SOURCE=horizon` and that currency has no entry in `SDEX_ASSETS`. Horizon prices assets, not currencies. |
 | Stale data everywhere, chain is fine | The indexer is behind. Rewind its cursor for that one contract; projections rebuild from raw `ChainEvent` rows. See the [runbook](runbook.md). |
 
 ---

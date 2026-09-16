@@ -200,8 +200,11 @@ hook is reported as an incident rather than a refusal
 | PII | Never on-chain. `docs/data-model.md` marks which tables carry it and are subject to retention and access control |
 | Amounts | `bigint` in Node, strings on the wire, `Decimal(39,0)` in Postgres. A JSON number is a double before validation runs |
 | Event decoding | Refuses to guess at payload shapes and refuses to coerce untyped values into amounts. A decoding gap is a red build, not a silent skip |
-| Rate limiting | In-process and therefore per-replica. Documented as the limitation it is; a shared limiter is on the roadmap |
-| Console auth | **None.** `noindex`, expected behind network-level access control. First item on the roadmap |
+| Rate limiting | In-process and therefore per-replica. Documented as the limitation it is; a shared limiter is on the roadmap. The console's login throttle has the same shape |
+| Console auth | Scrypt password hashes in `OPERATOR_ACCOUNTS`, HMAC-signed `httpOnly` session cookie, every request gated by an Edge `proxy.ts` |
+| Console authorisation | Five permissions (`liquidity:propose/decide/execute/sweep`, `kyc:revoke`) checked server-side in the mutation route handler. A mutation path with no policy is **refused**, not forwarded |
+| Console audit attribution | `requestedBy` / `approvedBy` are deleted from the request body and rewritten from the verified session, so a browser cannot attribute an action to someone else |
+| Console limitations | Operators are configuration (onboarding is a deploy), no SSO or MFA, and a session cannot be revoked before it expires — there is no session store, so rotating `OPERATOR_SESSION_SECRET` is the only lever. Still `noindex`, and still belongs behind network-level access control as a second layer |
 
 ---
 

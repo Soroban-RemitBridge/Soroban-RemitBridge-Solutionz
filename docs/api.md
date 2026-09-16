@@ -146,9 +146,13 @@ how long it is willing to carry that risk. **A stale quote is refused rather tha
 discounted**: a rate tick older than 60 seconds fails the quote instead of being
 served with a staleness note.
 
-`oracleSource` names the feed. A bundled static source labels itself
-`static-config`, and that label reaches the console and the audit log, so a
-placeholder rate can never be mistaken for a market one.
+`oracleSource` names the feed, and it names the venue rather than the class: the
+DEX source reports `horizon-sdex:USDC:G…->XLM`, so a rate carries the pair that
+produced it. The static source labels itself `static-config`, and that label
+reaches the console and the audit log, so a placeholder rate can never be
+mistaken for a market one. `PRICE_SOURCE` selects between them; when the DEX has
+no configured asset for a corridor's currency, the quote fails with a 503 naming
+the missing currency rather than falling back to the placeholder.
 
 ---
 
@@ -183,10 +187,16 @@ where retention rules and access control apply. See
 that matters most, which is that a hash is not a substitute for keeping the
 payload access-controlled.
 
-The provider is pluggable behind `IdVerificationProvider`. The shipped
-implementation is a mock, and it exercises every branch — approval, rejection,
-manual review, provider timeout, malformed webhook — because a mock that always
-approves would leave every path that matters untested.
+The provider is pluggable behind `IdVerificationProvider`, and two
+implementations ship. `KYC_PROVIDER=mock` is deterministic, holds no external
+state, and exercises every branch — approval, rejection, manual review, provider
+timeout, malformed webhook — because a mock that always approves would leave
+every path that matters untested. `KYC_PROVIDER=http` is the real adapter: it
+calls a vendor's REST API (`KYC_PROVIDER_BASE_URL`) and verifies webhook
+signatures, refusing on a non-2xx, a body outside the contract, an unknown
+outcome, a timeout, or an unsigned webhook. Its request/response contract is
+documented at the top of `backend/src/kyc-orchestration/http-provider.ts`, which
+is the thing a vendor adapter has to satisfy.
 
 ---
 

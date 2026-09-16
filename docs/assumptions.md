@@ -141,17 +141,26 @@ browser before any validation runs, so an amount that arrives as a number has
 already lost precision by the time the schema sees it. `no float` is a rule, not
 a convention, and it is enforced by making the types disagree.
 
-### The KYC provider is a mock, but the interface is real
+### There are two KYC providers, and the mock is one of them
 
 `IdVerificationProvider` is shaped like a production provider — submit, poll,
-webhook, structured verdicts — and `MockIdVerificationProvider` is deterministic
-and holds no external state.
+webhook, structured verdicts — and it has two implementations.
+`MockIdVerificationProvider` is deterministic and holds no external state.
+`HttpIdVerificationProvider` (`KYC_PROVIDER=http`) makes real network calls against
+a vendor's REST API, verifies webhook signatures with HMAC-SHA256, and refuses on
+anything it cannot understand.
 
-**Consequence.** The mock exists to exercise *branches*: approval, rejection,
-manual review, provider timeout, malformed webhook. A mock that always approved
-would leave every interesting path untested, which in a compliance product is
-precisely the wrong half to leave untested. Swapping in Sumsub or Onfido changes
-one factory call, not the call sites.
+**Consequence.** The mock is still the one CI runs, and it exists to exercise
+*branches*: approval, rejection, manual review, provider timeout, malformed
+webhook. A mock that always approved would leave every interesting path untested,
+which in a compliance product is precisely the wrong half to leave untested. The
+HTTP adapter is the answer to "so what runs in production": it fails closed — a
+non-2xx, a body outside the contract, an unknown outcome, a timeout or an
+unsigned webhook all refuse rather than approve — and it never falls back to the
+mock, because quietly downgrading a compliance check is how unverified transfers
+ship under a production-looking config. `sumsub` and `onfido` remain valid values
+for `KYC_PROVIDER` only so an existing config still validates; they resolve to a
+named error rather than to a guess. Point the `http` adapter at the vendor.
 
 ### Only attestation *hashes* cross the on-chain boundary
 
@@ -178,17 +187,26 @@ upgrading to `Keypair.sign` is a change to one call site plus a version bump in
 the algorithm label. Until then, treat quote verification as an internal
 control, not as evidence a counterparty can check independently.
 
-### The static price source announces itself
+### The price source is selected by configuration, and the placeholder announces itself
 
-`StaticPriceSource` labels every tick `static-config`, and the label reaches the
-operator console and the audit log.
+`PRICE_SOURCE=horizon` reads the Stellar DEX through Horizon's
+`/paths/strict-send`, which returns the *executable* rate for a probe size
+following whatever path the market uses. `PRICE_SOURCE=static`
+(`StaticPriceSource`) labels every tick `static-config`, and the label reaches the
+operator console and the audit log. `PRICE_SOURCE` defaults to `static`,
+because defaulting to a live network read would make a fresh clone's behaviour
+depend on whether Horizon happens to be reachable.
 
-**Consequence.** No quote produced today is a real market rate. The label exists
-so that a reviewer, an operator or a future contributor cannot mistake a
-placeholder for a feed. `SorobanPoolPriceSource` derives from pool utilisation
-rather than AMM reserves, for the same reason: a number that is at least a
-function of real state beats an invented one, and the seam for a real DEX adapter
-is already in place.
+**Consequence.** Two things are deliberately *not* solved. First, the DEX rate is
+for `PROBE_AMOUNT` (100 units of the source currency), not a mid-market quote for
+any size — a larger transfer gets a worse rate, which is true of the market
+rather than of this code, and the probe is a constant rather than a per-request
+parameter because letting a caller choose the probe would let a caller choose a
+favourable print and settle a larger transfer at it. Second, Horizon prices
+*assets*, not currencies, so a corridor whose destination currency has no entry
+in `SDEX_ASSETS` cannot be priced and the source raises a named 503 naming the
+missing currency — rather than inventing a rate. A static quote is never a real
+market rate, and the label exists so nobody mistakes one for a feed.
 
 ### Rate limiting is in-process
 
@@ -210,19 +228,26 @@ variable, so it does not exist in any client bundle.
 
 **Consequence.** Mutations cost a round trip through the Next server, and the
 console cannot be pointed at a different backend per browser session. In exchange
-there is exactly one place where a future auth token gets attached, and the
-backend's address is not disclosed to anyone who opens devtools.
+there is exactly one place the operator's session is verified and one place the
+backend's address could ever be disclosed — and it is not disclosed to anyone who
+opens devtools.
 
-### The console has no authentication
+### Operator accounts are configuration, not an identity provider
 
-It is marked `noindex` and is expected to sit behind network-level access
-control. Every mutation records a fixed deployment-wide identity in the audit
-log.
+The console authenticates (scrypt password hashes in `OPERATOR_ACCOUNTS`, an
+HMAC-signed session cookie, an Edge `proxy.ts` gate) and authorises (five
+permissions checked in the mutation route handler, with an unknown path refused
+rather than forwarded). There is still no user table and no SSO.
 
-**Consequence.** The audit log is honest about the gap rather than showing a
-fabricated operator name. Do not expose this console to the internet as-is; this
-is the first item on the README roadmap and it should be the first thing anyone
-deploying it fixes.
+**Consequence.** Onboarding or removing an operator is a deploy, and a session is
+valid for its whole TTL because there is no store to revoke it from — rotating
+`OPERATOR_SESSION_SECRET` ends every session at once, and that is the only lever.
+That is why the TTL defaults to one shift. What this did fix is the part that
+mattered for money: a credential is now required at all, and the audit log
+records the signed-in operator's own address, overwritten from the session rather
+than taken from the request body. It is still marked `noindex` and still belongs
+behind network-level access control as a second layer; the difference is that the
+second layer is no longer the only one.
 
 ### Frontend correctness is mostly about refusal
 

@@ -224,16 +224,22 @@ the signing key has since been rotated.
 
 ## Audit
 
-`AuditLog` is append-only, written for every state-changing operator action.
+`AuditLog` is the intended append-only store for who did what: `before` and
+`after` are both `Json`, so a reviewer can see *what changed* rather than only
+that something did, and `actorId` with `actorType` is the attribution.
 
-`before` and `after` are both `Json`, so a reviewer can see *what changed* rather
-than only that something did. Threshold changes, agent authorization, slash
-approvals and top-up decisions all land here.
+It has **no writer yet**, and that is stated rather than implied: the model exists
+in `prisma/schema.prisma`, and nothing in `backend/src` inserts a row into it.
+What does exist is attribution on the rows an action produces: a float top-up
+carries `requestedBy` and `approvedBy`, and the console's proxy **deletes both
+fields from the request body and rewrites them from the verified session**, so
+they name the operator who acted rather than whoever the browser claimed to be.
+That is real per-person attribution, in the record it applies to.
 
-`actorId` currently records a fixed deployment-wide identity, because the console
-has no authentication yet. That is a known gap, and it is recorded in the log's
-own documentation rather than papered over — a log that silently claims a per-user
-attribution it does not have is worse than one that admits it.
+**The remaining gap** is coverage: an action that writes no such row records no
+actor at all, and there is no chronological view a reviewer can read across
+actions. A single append-only write per state-changing action, with the session's
+operator as `actorId`, is roadmap item 1's companion.
 
 ---
 

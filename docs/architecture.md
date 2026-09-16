@@ -155,15 +155,20 @@ Four services in one process, each in its own directory with its own router.
 ### `kyc-orchestration`
 
 Exposes `IdVerificationProvider` — a provider-shaped interface (`submit`,
-`poll`, `verifyWebhookSignature`, `parseWebhook`, capability flags) — and ships a
-deterministic mock implementing every branch: approve, refer, reject, and
-provider error. The service maps the provider's verdict onto a tier, computes
-`sha256` of the signed payload, and publishes **only that hash** to the
-`ComplianceHook` via a Soroban transaction.
+`fetchResult`, `revoke`, `verifyWebhookSignature`, `parseWebhook`, capability
+flags) — with two implementations. A deterministic mock (`KYC_PROVIDER=mock`)
+implements every branch: approve, refer, reject, and provider error. An HTTP
+adapter (`KYC_PROVIDER=http`) calls a real vendor's REST API, verifies webhooks
+with HMAC-SHA256, and fails closed on anything outside the documented contract.
+The service maps the provider's verdict onto a tier, computes `sha256` of the
+signed payload, and publishes **only that hash** to the `ComplianceHook` via a
+Soroban transaction.
 
 The mock is deliberately not a rubber stamp. A mock that always approves never
 exercises the paths that matter in a compliance product, so the test suite drives
-each outcome explicitly.
+each outcome explicitly — and the HTTP adapter is tested the same way, against a
+stub vendor that returns a non-2xx, a contract-breaking body, an unknown outcome
+and a badly-signed webhook, every one of which must refuse.
 
 ### `agent-liquidity`
 
@@ -175,13 +180,23 @@ them would let an automated sweep move float that nobody approved.
 
 ### `quoting-service`
 
-Produces signed, timestamped, single-use quotes. `PriceSource` is pluggable; the
-bundled implementation is static config and labels every quote it produces
-`oracleSource: "static-config"`, because a rate with no provenance is
-indistinguishable from a stale one. Quotes are signed with an ed25519 key so a
-client can prove after the fact that the rate it was shown is the rate the
-network quoted — and `POST /quotes/verify` lets someone who does not hold the key
-check that claim.
+Produces signed, timestamped, single-use quotes. `PriceSource` is pluggable and
+selected by `PRICE_SOURCE`: `horizon` reads the Stellar DEX through
+`/paths/strict-send`, which returns the executable rate for a probe size along
+whatever path the market uses (`/order_book` would only price a pair that trades
+against itself, which almost nothing on the DEX does); `static` is the
+placeholder, and labels every quote it produces `oracleSource: "static-config"`
+because a rate with no provenance is indistinguishable from a stale one. A rate
+is refused — with a named 503, never an invented number — when a currency has no
+asset in `SDEX_ASSETS`, when the path list is empty, or when the tick is older
+than the source's maximum age.
+
+Quotes are HMAC-signed with the service's own key, which is an internal control
+rather than third-party evidence: the verifier and the issuer are the same
+service, and `algorithm` is carried on the quote so a verifier can refuse a
+signature it does not understand rather than mis-verify it. See
+`docs/assumptions.md` for the trade-off and what upgrading to an asymmetric
+signature would take.
 
 ### `event-indexer`
 

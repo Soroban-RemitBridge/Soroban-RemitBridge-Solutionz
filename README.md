@@ -200,15 +200,26 @@ sides safe from the other's counterparty risk:
 
 - **It is not a licensed money transmitter.** RemitBridge is infrastructure an
   anchor or MTO operates under *their* licences. Corridor-level regulatory
-  review is the operator's responsibility.
-- **The KYC provider is a mock.** The interface is real and provider-shaped
-  (`IdVerificationProvider`), but the shipped implementation is deterministic and
-  holds no external state. A production deployment swaps in Sumsub, Onfido or
-  equivalent without changing call sites.
-- **The operator console has no authentication yet.** See the roadmap. It is
-  marked `noindex` and must sit behind network-level access control until then.
-- **The bundled price source is static.** Every quote it produces is labelled
-  `oracleSource: "static-config"`, because a rate with no provenance is
+  review is the operator's responsibility, and no amount of code changes that.
+- **The carrier it ships with is a mock — the real one is a config change.** Two
+  implementations of `IdVerificationProvider` are in the tree: `mock`, which is
+  deterministic and holds no external state, and used by CI; and `http`, an HTTP
+  adapter over a vendor's REST API with signature-verified webhooks. Selecting
+  the real one is `KYC_PROVIDER=http` plus a base URL — no call site moves.
+  Sumsub and Onfido are *not* shipped as named adapters; pointing `http` at their
+  API is how they are used. What is not claimed is any vendor-specific behaviour
+  beyond the documented request/response contract.
+- **The operator console's accounts are configuration, not identity.** It now
+  requires a credential — signed session cookie, per-action role checks, and the
+  operator's own address written into the audit trail — but there is no user
+  table and no SSO. Operators live in `OPERATOR_ACCOUNTS`, so onboarding one is a
+  deploy and the session carries the roles it was issued with until it expires.
+  SSO is roadmap item 1, and the console remains `noindex` either way.
+- **The price source is real but the corridor mapping is not.** `PRICE_SOURCE`
+  selects between a live Stellar DEX read through Horizon and a static
+  placeholder. The DEX source refuses — by name — when a currency has no asset
+  configured, rather than inventing a rate. The static source still labels every
+  quote `oracleSource: "static-config"`, because a rate with no provenance is
   indistinguishable from a stale one.
 
 ---
@@ -224,13 +235,16 @@ remitbridge/
 │   ├── remit-escrow/          # commit-reveal custody
 │   └── liquidity-pool/        # regional float against bonded collateral
 ├── backend/                   # Node + TypeScript + Prisma
-│   ├── src/kyc-orchestration/ # provider interface, mock, tiers
+│   ├── src/kyc-orchestration/ # provider interface, mock + HTTP adapter, tiers
 │   ├── src/agent-liquidity/   # float monitoring, top-up approvals
-│   ├── src/quoting-service/   # signed, time-boxed FX quotes
+│   ├── src/quoting-service/   # signed quotes, static + Horizon DEX price sources
 │   ├── src/event-indexer/     # contract events → Postgres read model
 │   ├── src/api/               # Express server, middleware, OpenAPI
 │   └── prisma/                # schema + seed
 ├── admin-web/                 # Next.js operator console
+│   ├── src/lib/auth/          # operator accounts, signed sessions, role policy
+│   ├── src/proxy.ts           # the gate: session check + per-action authorisation
+│   ├── scripts/operator-hash.mjs  # produces the scrypt hashes OPERATOR_ACCOUNTS holds
 │   ├── src/                   # pages, server-side API client, response schemas
 │   └── e2e/                   # Playwright suite + the stub backend it drives
 ├── mobile/                    # Expo app: sender / recipient / agent
@@ -262,8 +276,10 @@ each artifact's export table; see `.github/workflows/contracts.yml`.
 | Money | `bigint` end to end, strings on the wire | A JSON number is parsed as a double before any validation runs |
 | Console | Next.js 16, React 19, Tailwind v4 | Server components read the API; browsers never talk to it directly |
 | Mobile | Expo SDK 57, expo-router | One codebase, real device builds without a local native toolchain |
-| KYC | Pluggable `IdVerificationProvider` | The commercial dependency will change; the interface should not |
-| Console tests | vitest for modules, Playwright for the browser | vitest reaches the schemas and formatters; only a browser reaches the proxy path and what a page refuses to render |
+| KYC | Pluggable `IdVerificationProvider`, mock + HTTP adapter | The commercial dependency will change; the interface should not. Both adapters are real implementations of it, so switching is config, not a refactor |
+| Price feed | Stellar DEX via Horizon `paths/strict-send` | The executable rate for a probe size, following whatever path the market uses — an `/order_book` call only prices a pair that trades against itself, which almost nothing on the DEX does |
+| Console auth | scrypt hashes in configuration, HMAC-signed session cookie, Edge `proxy.ts` | WebCrypto only, so one signature check runs in both the Edge gate and the Node route handler; no user table means no operator credentials sitting beside the KYC data |
+| Console tests | vitest for modules, Playwright for the browser | vitest reaches the schemas, the session format and the role table; only a browser reaches the gate, the proxy path, and what a page refuses to render |
 | CI | GitHub Actions | Separate workflows per component so a failure names its own cause |
 
 ### Two version choices worth explaining
@@ -346,12 +362,27 @@ the first thing to check when something looks wrong.
 
 ### 4. Operator console
 
+The console now requires a credential, so two variables must be set before it will
+serve anything — with `OPERATOR_SESSION_SECRET` unset it refuses every request
+rather than serving an unauthenticated console that looks configured.
+
 ```bash
 cd admin-web
-cp .env.example .env.local         # REMITBRIDGE_API_URL=http://localhost:4000
+cp .env.example .env.local         # REMITBRIDGE_API_URL + the two auth variables
 npm install
-npm run dev                        # http://localhost:3000
+
+export OPERATOR_SESSION_SECRET="$(openssl rand -base64 48)"
+export OPERATOR_ACCOUNTS="[{\"email\":\"you@example.com\",\"name\":\"Your Name\",\"passwordHash\":\"$(node scripts/operator-hash.mjs 'your password')\",\"roles\":[\"admin\"]}]"
+
+npm run dev                        # http://localhost:3000/login
 ```
+
+Accounts are configuration rather than rows in a table, for the reason given
+under [Security considerations](#security-considerations): an operator credential
+should not live in the same database as the KYC data. The three roles are `viewer`
+(reads only), `operator` (moves float) and `admin` (adds KYC revocation).
+`scripts/operator-hash.mjs` produces the hashes — plaintext is rejected at boot
+rather than hashed on the fly.
 
 ### 5. Mobile
 
@@ -373,14 +404,14 @@ your machine's LAN address.
 # Contracts — 115 tests, clippy clean
 cd contracts && cargo test --all-features
 
-# Backend — 52 tests
+# Backend — 93 tests
 cd backend && npm test
 
-# Frontends — 29 tests (console), 33 tests (mobile)
+# Frontends — 71 tests (console), 33 tests (mobile)
 cd admin-web && npm test
 cd mobile    && npm test
 
-# Console end to end — 43 tests in a real browser, against a production build
+# Console end to end — 56 tests in a real browser, against a production build
 # Needs the browser once: npx playwright install --with-deps chromium
 cd admin-web && npm run test:e2e
 
@@ -399,25 +430,36 @@ What the suites cover, and why those cases:
 - **Backend** — exact money arithmetic far beyond `2^53`, event decoding that
   *fails* rather than defaulting, every KYC provider branch including rejections,
   float alert classification, quote signature round-trips, and request-body
-  parsing per route. The provider suite exists because a mock that always
-  approves never exercises the paths that matter in a compliance product.
-- **Frontends** — the pure modules, under vitest. The console's 29 tests cover
+  parsing per route. The provider suites exist because a mock that always
+  approves never exercises the paths that matter in a compliance product, and
+  because a *real* adapter's failure modes are the ones that reach production:
+  the HTTP provider is tested against a stub vendor that returns a non-2xx, a
+  body outside the contract, an unknown outcome, and a webhook signed with the
+  wrong key — every one of which must refuse rather than approve. The Horizon
+  source is tested the same way, including a path that does not exist and an
+  amount Horizon returns that is not a decimal.
+- **Frontends** — the pure modules, under vitest. The console's 71 tests cover
   its response boundary — an amount arriving as a JSON number, an undeclared
   field, an unrecognised status, a pool snapshot missing its staleness flag —
   where each must fail validation and render as unavailable rather than as an
-  empty table. The mobile app's 33 tests cover the claim-code protocol in full:
-  byte length, alphabet, normalisation, the repair rules for `I`/`L`/`O`, and a
-  malformed entry reported separately from a mismatch. `expo-crypto` is aliased
-  to a real `node:crypto` double, so the hashing assertions mean something.
-  The console's rendering and end-to-end behaviour is covered separately, next.
-- **Console end to end** — 43 tests driving a real browser against a production
+  empty table. They also cover the session format (signature, expiry, a token
+  issued in the future, a tampered payload) and the role table, because a gate
+  whose tests only assert the happy path is a gate nobody has checked. The mobile
+  app's 33 tests cover the claim-code protocol in full: byte length, alphabet,
+  normalisation, the repair rules for `I`/`L`/`O`, and a malformed entry reported
+  separately from a mismatch. `expo-crypto` is aliased to a real `node:crypto`
+  double, so the hashing assertions mean something. The console's rendering and
+  end-to-end behaviour is covered separately, next.
+- **Console end to end** — 56 tests driving a real browser against a production
   `next build`, with a stub backend answering in place of the API
   (`admin-web/e2e/`). It exists for what nothing else can reach: the browser →
   `/api/backend/*` proxy → backend path that every operator action takes, the
   confirmation in front of an irreversible one, and the three states a list must
   never confuse — empty, unavailable, and shape-wrong. The stub is a model of the
   backend rather than the backend, and what that leaves unproven is in the
-  verification table below.
+  verification table below. The auth specs are the clearest case for the suite
+  existing at all: "a viewer cannot approve a top-up" is not a claim about a
+  hidden button, and only a real request can show the server refusing one.
 
 ---
 
@@ -429,6 +471,13 @@ What the suites cover, and why those cases:
 | Backend + indexer | Railway / Render / Fly.io | `docker compose` or the `backend/Dockerfile` |
 | Console | Vercel | `cd admin-web && vercel --prod` |
 | Mobile | EAS Build | `cd mobile && npx eas build --profile preview --platform android` |
+
+The console needs `OPERATOR_SESSION_SECRET` and `OPERATOR_ACCOUNTS` set on the
+host as well as locally — it refuses every request without them, so a deployment
+that forgets them is a console that answers `500` rather than one that lets
+anyone in. `OPERATOR_SESSION_SECRET` is a secret; `OPERATOR_ACCOUNTS` holds
+hashes, not passwords, and two instances that disagree about it will disagree
+about who can sign in.
 
 Testnet contract addresses and hosted URLs are written to
 `deployed-addresses.json` by the deploy script and belong here once a deployment
@@ -456,11 +505,13 @@ the difference between code someone can rely on and code they cannot.
 | Component | Evidence |
 | --- | --- |
 | Contracts | 115 tests pass; `clippy --all-targets -- -D warnings` clean; `cargo fmt --check` clean; all four Wasm artifacts build and export only their own ABI |
-| Backend | 52 tests pass; `tsc --noEmit` clean; ESLint (type-aware) clean; production build succeeds |
+| Backend | 93 tests pass; `tsc --noEmit` clean; ESLint (type-aware) clean; production build succeeds |
+| Backend: HTTP KYC provider | Tested against a stub vendor over the real `fetch` path: contract-valid approval, a non-2xx, a body outside the contract, an unknown outcome, a timeout, and a webhook with a wrong, absent or unconfigured signature — each refusing rather than approving |
+| Backend: Horizon price source | Tested against recorded Horizon responses, including one captured from `horizon.stellar.org` for a real USDC path; a currency with no configured asset, an empty path list, a non-decimal amount and a non-2xx all raise a named 503 rather than producing a rate |
 | Backend container | Image builds; entrypoint applies the schema to a live Postgres; API starts and serves `/healthz`, `/readyz`, `/openapi.json` and DB-backed routes; a signed quote was produced end to end through the container |
 | Deploy tooling | `tsc --noEmit` clean; full `--dry-run` walks upload → deploy → initialize → wire → verify for all four contracts, exercising real argument encoding |
-| Console | 29 unit tests pass; `tsc --noEmit` clean; ESLint clean; `next build` succeeds with all routes dynamic; `npm audit` reports 0 vulnerabilities |
-| Console (end to end) | 43 Playwright tests pass in headless Chromium against the `next build` output served on a real port: every page, the mutation path through `/api/backend/*`, the confirmation guard on revocation, and the empty / unavailable / malformed distinctions |
+| Console | 71 unit tests pass; `tsc --noEmit` clean; ESLint clean; `next build` succeeds with all routes dynamic (including the Edge bundle, which is what catches a `node:crypto` import reaching the gate); `npm audit` reports 0 vulnerabilities |
+| Console (end to end) | 56 Playwright tests pass in headless Chromium against the `next build` output served on a real port: every page, the mutation path through `/api/backend/*`, the confirmation guard on revocation, the empty / unavailable / malformed distinctions, and the gate — a visitor redirected to `/login` with their destination remembered, a wrong password refused identically to an unknown email, a `next` pointing off-site ignored, sign-out ending the session for the *next* request, a viewer refused with 403 by the server on a top-up decision, and a route with no policy refused rather than forwarded |
 | Mobile | 33 tests pass; `tsc --noEmit` clean; ESLint clean |
 
 **Not yet verified**
@@ -476,10 +527,26 @@ the difference between code someone can rely on and code they cannot.
   the console's own behaviour against a model of the backend's contract; it cannot
   prove the console agrees with the real service. That gap is why the one contract
   mismatch it did find is pinned by a test on the real route rather than by a
-  fixture.
+  fixture. The same caveat applies with more force to the console's auth specs:
+  the operators they sign in as are hashes generated by the real script, but the
+  stub backend is what accepts the resulting proxy request.
+- **No KYC vendor has been called.** The HTTP provider is verified against a stub
+  that speaks the documented contract, on both the success and the refusal paths.
+  It has not been pointed at a live Sumsub, Onfido or other account, so any
+  vendor whose API differs from the contract in
+  `src/kyc-orchestration/http-provider.ts` is unproven — the translation layer is
+  the part to write, and the contract is what it has to satisfy.
+- **The DEX price source has not been run against a funded testnet corridor.**
+  Its parsing is pinned to a real `horizon.stellar.org` response and its refusals
+  are tested, but no quote has been produced from a live market for a corridor
+  this system actually settles.
+- **The console's sessions are not revocable.** A signed cookie is valid for its
+  whole TTL; there is no session store and therefore no revocation list. Removing
+  an operator from `OPERATOR_ACCOUNTS` stops their *next* login, not an existing
+  cookie. Rotating `OPERATOR_SESSION_SECRET` ends every session at once, which is
+  the only lever, and it is why the TTL defaults to one shift rather than a week.
 
-Three bugs found this way and fixed, none of which reading the code would have
-caught:
+Bugs found this way and fixed, none of which reading the code would have caught:
 
 1. `express.text()` mounted on the `/api/v1` prefix consumed the body for every
    route, so all POSTs received a string instead of an object. Found by starting
@@ -494,6 +561,18 @@ caught:
    configuration unavailable" instead of the tiers. Found by writing a fixture
    that followed the backend's response contract rather than the console's own
    types, which is exactly the mismatch the types cannot show.
+4. The deploy workflow generated a throwaway keypair, wrote it to `$GITHUB_ENV`,
+   and then ran `npm run deploy:dry-run` **in the same step**. A runner applies
+   `$GITHUB_ENV` *between* steps, so the dry run saw an empty environment and
+   exited 1 with all four variables reported as `Required` — the job had never
+   actually exercised the dry run it exists to exercise. Found by running CI,
+   which had never run before this repository was pushed.
+5. The console would not build once the gate existed, because the role vocabulary
+   lived beside the password hashing in `lib/auth/accounts.ts` and importing it
+   from the session module dragged `node:crypto` into the Edge bundle. The fix was
+   a seam (`lib/auth/roles.ts`) rather than a flag. Found by building the console,
+   not by reading it — and it is why the unit suite asserts the session format and
+   the role table separately.
 
 ---
 
@@ -518,6 +597,35 @@ No secret is required for a recipient to be paid, and none is exposed to the
 browser: the console reads server-side and proxies mutations, so the backend
 address never reaches a client bundle.
 
+**Operator authentication.** The console gates every request in an Edge
+`proxy.ts`, and each money-moving mutation is authorised again in the route
+handler. Both use the same WebCrypto session module, so there is one signature
+check rather than two that drift.
+
+- **Credentials** are scrypt hashes in `OPERATOR_ACCOUNTS`, never plaintext, with
+  the cost parameters stored alongside the hash so they can be raised later
+  without invalidating existing entries. An unknown email is verified against a
+  throwaway hash anyway, and returns the identical message, so the form is not an
+  oracle for who has an account.
+- **Sessions** are HMAC-signed, `httpOnly`, `sameSite=lax`, and `secure` whenever
+  the request actually arrived over HTTPS — taken from `x-forwarded-proto`
+  rather than from `NODE_ENV`, because a production console behind a TLS
+  terminator sees plain HTTP on the loopback and both mistakes are bad in
+  opposite directions.
+- **Authorisation** is per action, not per page: `liquidity:propose`,
+  `liquidity:decide`, `liquidity:execute`, `liquidity:sweep` and `kyc:revoke` are
+  distinct permissions, and a mutation whose path has no policy is **refused**
+  rather than forwarded. Failing open for a route nobody remembered to classify
+  is the wrong direction for an endpoint that moves float.
+- **Audit attribution** is overwritten from the session. A browser that posts
+  `requestedBy: someone-else@example.com` has that field deleted and rewritten
+  with the signed-in operator's address, so the log records who acted rather than
+  who the client claimed.
+- **What this is not.** There is no SSO, no MFA and no session revocation list —
+  a cookie is valid for its whole TTL, and removing an operator stops the next
+  login rather than an existing cookie. The login throttle is in-process and
+  therefore per-replica, the same honest limitation as the API's rate limiting.
+
 **Money handling.** `bigint` in the backend, strings on the wire, `Decimal(39,0)`
 in Postgres, `i128` on-chain, and a shared rounding helper (`applyBps`) that
 rounds down in the payer's favour so a quote and its settlement cannot disagree.
@@ -528,11 +636,14 @@ reason. `no float` is a rule, not a convention.
 the two devices that need them. No optimistic UI on money-moving actions — a
 top-up shows as approved only after the backend agrees.
 
-**Known gaps.** No operator authentication. No `prisma/migrations/` directory
-committed, because generating one needs a live database and an invented empty
-migration history would be worse than admitting the gap; the entrypoint detects
-this and warns loudly. Rate limiting is in-process and therefore per-replica —
-documented in the middleware as the honest limitation it is.
+**Known gaps.** Operator accounts are configuration, not an identity provider:
+no SSO, no MFA, and no way to revoke a session before it expires. There is no
+`prisma/migrations/` directory committed, because generating one needs a live
+database and an invented empty migration history would be worse than admitting
+the gap; the entrypoint detects this and warns loudly. Rate limiting is
+in-process and therefore per-replica — the same limitation applies to the login
+throttle, and both are documented where they are implemented rather than only
+here.
 
 ---
 
@@ -540,13 +651,20 @@ documented in the middleware as the honest limitation it is.
 
 **Before this could serve real customers**
 
-1. **Operator authentication and authorisation.** SSO with per-action roles, and
-   real per-person attribution in the audit log (it currently records a fixed
-   deployment-wide identity so the log is honest about the gap).
-2. **A real KYC provider** behind the existing `IdVerificationProvider`
-   interface, including liveness and document authenticity checks.
-3. **A real price feed.** A Stellar DEX or oracle adapter implementing
-   `PriceSource`; the static source already labels itself as such in every quote.
+1. **Replace the operator accounts with an identity provider.** Authentication,
+   per-action roles and per-person audit attribution all landed — sessions are
+   signed cookies, five permissions are enforced server-side, and the audit trail
+   carries the operator's own address. What remains is the identity layer: SSO,
+   MFA, and a session store that can revoke before expiry, so onboarding a person
+   is not a deploy.
+2. **Point the KYC provider at a real vendor.** The `http` adapter is real,
+   signature-verifying and fails closed, but no live vendor account has been
+   called; a vendor whose API differs from the documented contract needs its
+   translation written. See `src/kyc-orchestration/http-provider.ts`.
+3. **Run the DEX price source against a live corridor.** The Horizon source
+   prices the Stellar DEX and refuses when it cannot; what it has not done is
+   quote a corridor this system actually settles, which is also what would
+   validate the probe size against those transfers' typical size.
 4. **Deploy to testnet and run an end-to-end corridor test** with a funded sender
    and a real agent, closing the largest gap in the verification table above.
 5. **Generate and review the initial Prisma migration.**
@@ -566,7 +684,8 @@ documented in the middleware as the honest limitation it is.
     The console now has a Playwright suite over a production build; what remains
     is asserting the components themselves, and giving the mobile app a suite
     that runs its screens rather than only its pure modules.
-11. Distributed rate limiting (Redis) and a shared idempotency layer.
+11. Distributed rate limiting (Redis) and a shared idempotency layer. The login
+    throttle has the same in-process limitation and would move with it.
 12. Contract upgrade path with a timelock, and a documented emergency procedure.
 13. `Property-based tests` (`proptest`) on the escrow's commit-reveal and refund
     state machine.

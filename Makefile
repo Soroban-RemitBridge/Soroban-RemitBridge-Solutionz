@@ -55,6 +55,18 @@ contracts-build: ## Build the four deployable Wasm artifacts
 deploy-dry-run: ## Walk the deploy and wiring path without submitting anything
 	cd scripts && $(NPM) run deploy:dry-run
 
+.PHONY: deploy-verify
+deploy-verify: ## Read a live deployment's state back over RPC (needs scripts/.env)
+	cd scripts && $(NPM) run verify
+
+.PHONY: smoke
+smoke: ## Settle one real transfer on testnet end to end (spends testnet fees)
+	cd scripts && $(NPM) run smoke-test
+
+.PHONY: costs
+costs: ## Report instructions, entries, bytes and rent for each money-moving entry point
+	cd contracts && $(CARGO) test -p remit-escrow cost_report_hot_paths -- --nocapture
+
 # ---------------------------------------------------------------- checks ----
 
 .PHONY: typecheck
@@ -78,7 +90,7 @@ lint: ## Lint every Node component
 .PHONY: test
 test: ## Run the test suites for the contracts and every Node component
 	@fail=0; \
-	cd contracts && $(CARGO) test --all-features || fail=1; \
+	(cd contracts && $(CARGO) test --all-features) || fail=1; \
 	for dir in backend admin-web mobile; do \
 		echo "==> $$dir"; \
 		(cd $$dir && $(NPM) test) || fail=1; \

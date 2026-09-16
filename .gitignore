@@ -66,7 +66,7 @@ Thumbs.db
 *~
 
 # ---------- Generated deploy artifacts ----------
-deployed-addresses.json
+deployed-addresses*
 !deployed-addresses.example.json
 
 # Deployment configuration carries region-specific commercial settings

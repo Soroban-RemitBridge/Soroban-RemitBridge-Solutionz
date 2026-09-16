@@ -13,7 +13,8 @@
     "token:create": "tsx src/create-test-token.ts",
     "deploy": "tsx src/deploy-contracts.ts",
     "deploy:dry-run": "tsx src/deploy-contracts.ts --dry-run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "tsx src/verify-deployment.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^17.1.0",
